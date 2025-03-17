@@ -81,7 +81,7 @@ If none of these types seem suitable for your needs,
 or you'd rather have your own type with its own name than repeatedly typing out all the case types as generic arguments
 every time you refer to it, you can create a custom union type.
 To do this, you can either write a completely custom type following your own rules, 
-write a custom type following the same patterns and interfaces provided in this library to allow interop with features provided there,
+write a custom type following the same patterns and interfaces provided in this library to allow interop with features provided,
 or use the source generator to create the type for you from a partial declaration.
 
 ---
