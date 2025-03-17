@@ -73,15 +73,16 @@ Its not possible to use it that way in C# but you can simulate a bit of it via s
 - The `Variant` type is a type union that is not actually constrained.
 It can hold a value of any type, but will not box most primitives and small structs.
 It does this by partially being a type union with a fixed number of known cases, 
-and a catch-all case that also tries avoid boxing at runtime for types that can fit in the provided space.
+and a catch-all case that also tries to avoid boxing at runtime for types that can fit in the provided space.
 It is a good choice when you would have otherwise chosen to use `object`, 
 but want to avoid boxing in common scenarios.
 
 If none of these types seem suitable for your needs,
-or you'd rather have your own type with its own name than repeatedly type out all the case types as generic arguements
+or you'd rather have your own type with its own name than repeatedly typing out all the case types as generic arguments
 every time you refer to it, you can create a custom union type.
-To do this, you can either write the type from scratch following the same patterns
-and implementing the same interfaces or you can use the source generator to create them for you.
+To do this, you can either write a completely custom type following your own rules, 
+write a custom type following the same patterns and interfaces provided in this library to allow interop with features provided there,
+or use the source generator to create the type for you from a partial declaration.
 
 ---
 
