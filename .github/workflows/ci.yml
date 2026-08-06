@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '11.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore
+        run: dotnet restore src/UnionTypes.sln
+
+      - name: Build
+        run: dotnet build src/UnionTypes.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test src/UnionTypes.sln --configuration Release --no-build --verbosity normal

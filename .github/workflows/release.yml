@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  release:
+    types: [ published ]
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '11.0.x'
+          dotnet-quality: 'preview'
+
+      # strip leading 'v' from tag names like v1.2.3
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Pack UnionTypes.Toolkit
+        run: >
+          dotnet build src/UnionTypes/UnionTypes.csproj
+          -c Release
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:PackageVersion=${{ steps.version.outputs.version }}
+
+      - name: Pack UnionTypes.Toolkit.Generators
+        run: >
+          dotnet build src/SourceGenerators.Package/SourceGenerators.Package.csproj
+          -c Release
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:PackageVersion=${{ steps.version.outputs.version }}
+
+      - name: Upload packages to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src/UnionTypes/bin/Release/*.nupkg
+            src/SourceGenerators.Package/bin/Release/*.nupkg
