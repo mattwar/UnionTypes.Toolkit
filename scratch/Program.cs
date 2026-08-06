@@ -1,5 +1,5 @@
 var u = new MyUnion(10.0f);
-Console.WriteLine(u.Value);
+Console.WriteLine($"The value is {u.Value}");
 
 public partial struct MyUnion
 {
