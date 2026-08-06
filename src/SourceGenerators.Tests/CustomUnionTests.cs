@@ -16,7 +16,6 @@ public class CustomUnionTests
     {
         TestGenerator(
             """
-            // @OverlappedUnion
             public partial struct MyUnion
             {
                 partial void Cases(int case1, float case2);
@@ -45,7 +44,6 @@ public class CustomUnionTests
     {
         TestGenerator(
             """
-            // @OverlappedUnion
             public partial struct MyUnion
             {
                 partial void Cases(A case1, B case2);
@@ -103,7 +101,7 @@ public class CustomUnionTests
             {
                 // prove that contents of the two decomposable cases got overlapped into the overlapped field
                 return generatedText.Contains("_overlapped")
-                    && generatedText.Contains("(int Value1, float Value2) Case1")          // part of overlapped struct
+                    && generatedText.Contains("(int, float) Case1")          // part of overlapped struct
                     && generatedText.Contains("float Case2");       // part of overlapped struct
             });
     }
