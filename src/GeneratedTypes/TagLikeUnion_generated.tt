@@ -1,0 +1,23 @@
+﻿<#@ template compilerOptions="/d:T4" debug="true" hostspecific="false" language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ output extension=".cs" #>
+<#@ include file="..\Generators\Generator.cs" #>
+<#@ include file="..\Generators\CustomUnionGenerator.cs" #>
+<#= new CustomUnionGenerator().Generate(
+    new UnionInfo(
+        "TagLikeUnion",
+        [
+            new CaseDesc(
+                new TypeDesc("Open", [new MemberDesc("Percent", TypeDesc.Float, isParameter: true)]),
+                generateType: true
+                ),  
+            new CaseDesc(
+                new TypeDesc("Closed", [new MemberDesc("Percent", TypeDesc.Float, isParameter: true)]),
+                generateType: true
+                ),
+        ]
+        )      
+) #>

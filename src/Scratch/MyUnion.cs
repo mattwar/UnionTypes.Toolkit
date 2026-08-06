@@ -1,1 +1,0 @@
-﻿Console.WriteLine("Temporary scratch pad for debugging generated union types");

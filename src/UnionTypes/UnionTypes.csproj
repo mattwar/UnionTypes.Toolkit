@@ -2,12 +2,13 @@
 
   <PropertyGroup>
     <OutputType>Library</OutputType>
-		<TargetFramework>net8.0</TargetFramework>
+		<TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <AssemblyName>UnionTypes.Toolkit</AssemblyName>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <TransformOnBuild>True</TransformOnBuild>
     <Authors>Matt Warren</Authors>
     <Description>A collection of common union types and tools to build custom ones.</Description>
     <PackageProjectUrl>https://github.com/mattwar/UnionTypes.Toolkit</PackageProjectUrl>
@@ -26,25 +27,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Collections.Immutable" Version="9.0.1" />
-  </ItemGroup>
-
-	<ItemGroup>
     <None Update="ReadMe.Nuget.md">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
-    </None>
-    <None Update="Result_generated.tt">
-      <LastGenOutput>Result_generated.cs</LastGenOutput>
-      <Generator>TextTemplatingFileGenerator</Generator>
-    </None>
-    <None Update="Option_generated.tt">
-      <Generator>TextTemplatingFileGenerator</Generator>
-      <LastGenOutput>Option_generated.cs</LastGenOutput>
-    </None>
-    <None Update="OneOf_generated.tt">
-      <Generator>TextTemplatingFileGenerator</Generator>
-      <LastGenOutput>OneOf_generated.cs</LastGenOutput>
     </None>
   </ItemGroup>
 
@@ -52,45 +37,21 @@
     <Service Include="{508349b6-6b84-4df5-91f0-309beebad82d}" />
   </ItemGroup>
 
+  <!-- Cross-platform, SDK-only T4 engine: runs via dotnet build/CI, not just inside Visual Studio -->
   <ItemGroup>
-    <Compile Update="Option.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
+    <PackageReference Include="T4.BuildTools" Version="3.0.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <T4Transform Include="Standard_Unions_generated.tt" />
+    <Compile Update="Standard_Unions_generated.cs">
+      <DependentUpon>Standard_Unions_generated.tt</DependentUpon>
     </Compile>
-    <Compile Update="Option_generated.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Option_generated.tt</DependentUpon>
+    <T4Transform Include="Fat_Unions_generated.tt" />
+    <Compile Update="Fat_Unions_generated.cs">
+      <DependentUpon>Fat_Unions_generated.tt</DependentUpon>
     </Compile>
-    <Compile Update="IOneOf.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-    </Compile>
-    <Compile Update="OneOf_generated.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>OneOf_generated.tt</DependentUpon>
-    </Compile>
-    <Compile Update="Result_generated.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Result_generated.tt</DependentUpon>
-    </Compile>
-    <Compile Update="ShapeGenerator.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>ShapeGenerator.tt</DependentUpon>
-    </Compile>
-    <Compile Update="StructShape.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>StructShape.tt</DependentUpon>
-    </Compile>
-    <Compile Update="StructShapeGenerator.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>StructShapeGenerator.tt</DependentUpon>
-    </Compile>
+
   </ItemGroup>
 
 </Project>

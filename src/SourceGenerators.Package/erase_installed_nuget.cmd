@@ -1,0 +1,1 @@
+rd /S %userprofile%\.nuget\packages\uniontypes.toolkit.generators

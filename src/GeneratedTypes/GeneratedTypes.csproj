@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+    <TransformOnBuild>True</TransformOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Service Include="{508349b6-6b84-4df5-91f0-309beebad82d}" />
+  </ItemGroup>
+
+  <!-- Cross-platform, SDK-only T4 engine: runs via dotnet build/CI, not just inside Visual Studio -->
+  <ItemGroup>
+    <PackageReference Include="T4.BuildTools" Version="3.0.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <T4Transform Include="TagLikeUnion_generated.tt" />
+    <Compile Update="TagLikeUnion_generated.cs">
+      <DependentUpon>TagLikeUnion_generated.tt</DependentUpon>
+    </Compile>
+    <T4Transform Include="SimplePrimitivesUnion_generated.tt" />
+    <Compile Update="SimplePrimitivesUnion_generated.cs">
+      <DependentUpon>SimplePrimitivesUnion_generated.tt</DependentUpon>
+    </Compile>
+
+  </ItemGroup>
+
+</Project>

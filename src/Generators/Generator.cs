@@ -1,6 +1,6 @@
 ﻿// <#+
 #if !T4
-namespace UnionTypes.Generators
+namespace UnionTypes.Toolkit.Generators
 {
     using System;
     using System.Collections.Generic;

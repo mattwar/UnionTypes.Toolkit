@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+		<LangVersion>11</LangVersion>
+    <IsPackable>false</IsPackable>
+		<Nullable>enable</Nullable>
+    <!-- Avoid ID conflicts with the package project. -->
+		<PackageId>UnionTypes.Toolkit.Generators.Library</PackageId>
+		<AssemblyName>UnionTypes.Toolkit.Generators</AssemblyName>
+	</PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Generators\Generator.cs" Link="Generator.cs" />
+    <Compile Include="..\Generators\CustomUnionGenerator.cs" Link="CustomUnionGenerator.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+		<!--
+		<PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="2.9.8" />
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.3.1" />
+		-->
+		<PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.3" />
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.4.0" />
+  </ItemGroup>
+
+</Project>
