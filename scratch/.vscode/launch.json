@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Scratch",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-scratch",
+            "program": "${workspaceFolder}/bin/Debug/net11.0/Scratch.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        }
+    ]
+}

@@ -4,6 +4,11 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 #nullable enable
+#pragma warning disable CS8600
+#pragma warning disable CS8601
+#pragma warning disable CS8603
+#pragma warning disable CS8604
+#pragma warning disable CS8605
 #pragma warning disable CS8618
 
 [System.Runtime.CompilerServices.Union]
@@ -15,8 +20,8 @@ public partial struct TagLikeUnion : System.Runtime.CompilerServices.IUnion
     [StructLayout(LayoutKind.Explicit)]
     private struct Overlapped
     {
-        [FieldOffset(0)] public float Case1;
-        [FieldOffset(0)] public float Case2;
+        [FieldOffset(0)] public Open Case1;
+        [FieldOffset(0)] public Closed Case2;
     }
 
     public record struct Open(float Percent);
@@ -25,27 +30,18 @@ public partial struct TagLikeUnion : System.Runtime.CompilerServices.IUnion
     public TagLikeUnion(Open value)
     {
         _kind = 1;
-        value.Deconstruct(out var v);
-        _overlapped.Case1 = v;
+        _overlapped.Case1 = value;
     }
 
     public TagLikeUnion(Closed value)
     {
         _kind = 2;
-        value.Deconstruct(out var v);
-        _overlapped.Case2 = v;
+        _overlapped.Case2 = value;
     }
 
-    private Open GetCase1()
-    {
-        var tmp0 = _overlapped.Case1;
-        return new (tmp0);
-    }
-    private Closed GetCase2()
-    {
-        var tmp0 = _overlapped.Case2;
-        return new (tmp0);
-    }
+    private Open GetCase1() => _overlapped.Case1;
+
+    private Closed GetCase2() => _overlapped.Case2;
 
     public object? Value =>
         _kind switch

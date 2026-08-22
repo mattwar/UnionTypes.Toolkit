@@ -154,16 +154,6 @@ namespace UnionTypes.Toolkit.Generators
             }
         }
 
-        private static bool IsCustomUnion(INamedTypeSymbol symbol, out AttributeData? attribute)
-        {
-            // verify that the symbol truly has the C# [Union] attribute applied,
-            // and its not just some other attribute with the same name
-            if (symbol.TryGetAttribute("System.Runtime.CompilerServices.UnionAttribute", out attribute))
-                return true;
-            attribute = null;
-            return false;
-        }
-
         /// <summary>
         /// Gets the info that drives the code generation for the union type.
         /// </summary>
@@ -182,8 +172,9 @@ namespace UnionTypes.Toolkit.Generators
             var usings = usingDirectives.Select(uz => uz.ToString()).ToArray();
 
             var modifiers = GetModifiers(unionType);
+            var accessibility = GetMemberAccessibilityForType(unionType);
 
-            var options = GetLayoutOptionsFromComments(unionType);
+            var style = GetLayoutStyleFromComments(unionType, LayoutStyle.Tagged);
 
             // get all cases declared for union type
             //GetTypeCasesFromNestedTypes(unionType, cases, diagnostics);
@@ -191,13 +182,13 @@ namespace UnionTypes.Toolkit.Generators
 
             if (cases.Count > 0)
             {
-                var name = unionType.Name; // name w/o type parameters or namespace
-                var typeName = GetTypeShortName(unionType); // name w/o namespace
+                var fullName = GetTypeFullName(unionType);
 
                 var union = new UnionInfo(
-                    name,
-                    options,
-                    cases
+                    fullName,
+                    cases,
+                    style,
+                    accessibility
                     );
 
                 info = new GenerationInfo(namespaceName, usings, union, diagnostics);
@@ -227,43 +218,19 @@ namespace UnionTypes.Toolkit.Generators
         }
 
         /// <summary>
-        /// Gets <see cref="LayoutOptions"/> from comments on the declared union type.
+        /// Gets <see cref="LayoutStyle"/> from comments on the declared union type.
         /// </summary>
-        private LayoutOptions GetLayoutOptionsFromComments(ISymbol symbol)
+        private LayoutStyle GetLayoutStyleFromComments(ISymbol symbol, LayoutStyle defaultStyle)
         {
-            var options = LayoutOptions.Default;
-
-            if (TryGetCommentProperty(symbol, "UnionLayout", out var value))
+            if (TryGetCommentProperty(symbol, "Layout", out var value))
             {
-                if (Enum.TryParse(value, ignoreCase: true, out LayoutOptions parsed))
+                if (Enum.TryParse(value, ignoreCase: true, out LayoutStyle style))
                 {
-                    options = parsed;
+                    return style;
                 }
             }
 
-            return options;
-        }
-
-        private void GetTypeCasesFromNestedTypes(
-            INamedTypeSymbol unionType, 
-            List<CaseDesc> cases,
-            List<Diagnostic> diagnostics)
-        {
-            var nestedTypes = unionType
-                .GetTypeMembers()
-                .OfType<INamedTypeSymbol>()
-                .Where(nt => nt.DeclaredAccessibility == Accessibility.Public
-                        || nt.DeclaredAccessibility == Accessibility.Internal)
-                .ToList();
-
-            foreach (var nestedType in nestedTypes)
-            {
-                if (nestedType.TryGetAttribute(CaseAttributeName, out var attr))
-                {
-                    var caseDesc = GetCaseDesc(nestedType);
-                    cases.Add(caseDesc);
-                }
-            }
+            return defaultStyle;
         }
 
         private void GetTypeCasesFromPrivateCaseMethod(
@@ -282,77 +249,247 @@ namespace UnionTypes.Toolkit.Generators
                          && m.Parameters.Length > 0)
                 .ToList();
 
+            var caseTypes = new List<ITypeSymbol>();
+            var caseParams = new List<IParameterSymbol>();
+
             foreach (var cm in casesMethods)
             {
                 foreach (var pm in cm.Parameters)
                 {
-                    var caseDesc = GetCaseDesc(pm.Type);
-                    cases.Add(caseDesc);
+                    caseTypes.Add(pm.Type);
+                    caseParams.Add(pm);
                 }
             }
+
+            for (int i = 0; i < caseTypes.Count; i++)
+            {
+                var caseType = caseTypes[i];
+                var declaringNode = caseParams[i].DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+                var caseDesc = GetCaseDesc(caseTypes, i, declaringNode);
+                cases.Add(caseDesc);
+            }
+        }
+     
+        /// <summary>
+        /// Builds a <see cref="CaseDesc"/> for the case type at the given index in the list of case types.
+        /// </summary>
+        private CaseDesc GetCaseDesc(IReadOnlyList<ITypeSymbol> caseTypes, int caseIndex, SyntaxNode? declarationNode = null)
+        {
+            var type = caseTypes[caseIndex];
+            var nnType = type.GetNonNullableType();
+            var typeName = GetTypeFullName(type);
+            var kind = GetTypeDescKind(nnType);
+            var storageCap = GetStorageCapable(nnType);
+            var members = GetDecomposibleMembers(nnType);
+            var typeDesc = new TypeDesc(typeName, kind, storageCap, members);
+            var nonDisjointCases = Enumerable.Range(0, caseTypes.Count)
+                .Where(i => i != caseIndex && !AreDisjoint(type, caseTypes[i]))
+                .ToList();
+            var accessibility = GetMemberAccessibilityForType(type);
+            var storageOverride = GetStorageOverride(nnType, declarationNode);
+            return new CaseDesc(typeDesc, nonDisjointCases, accessibility, storageOverride);
         }
 
         /// <summary>
-        /// Gets a deconstructable member of a case type from a parameter symbol,
-        /// typically from the constructor of the type (record)
+        /// Return true if two types are disjoint (can never contain the same value as the other.)
         /// </summary>
-        private MemberDesc GetCaseMember(string name, ITypeSymbol type, bool isParameter)
+        private bool AreDisjoint(ITypeSymbol typeA, ITypeSymbol typeB)
         {
-            var kind = GetTypeDescKind(type);
-            var typeName = GetTypeFullName(type);
-            var nestedMembers = GetDecomposibleMembers(type);
-            var typeDesc = nestedMembers.Count > 0 ? new TypeDesc(typeName, nestedMembers) : new TypeDesc(typeName, kind);
-            var memberDesc = new MemberDesc(name, typeDesc, isParameter);
-            return memberDesc;
-        }
+            if (typeA.IsNullable())
+                typeA = typeA.GetNonNullableType();
 
-        private CaseDesc GetCaseDesc(ITypeSymbol type)
-        {
-            var kind = GetTypeDescKind(type);
-            var typeName = GetTypeFullName(type);
-            var members = GetDecomposibleMembers(type);
-            var typeDesc = members.Count > 0 ? new TypeDesc(typeName, members) : new TypeDesc(typeName, kind);
-            return new CaseDesc(typeDesc, generateType: false);
-        }
+            if (typeB.IsNullable())
+                typeB = typeB.GetNonNullableType();
 
-        private IReadOnlyList<MemberDesc> GetDecomposibleMembers(ITypeSymbol caseSymbol)
-        {
-            if (caseSymbol.IsValueType
-                && caseSymbol is INamedTypeSymbol nt)
+            // if they are exactly the same type, then they are certainly not disjoint from each other.
+            if (SymbolEqualityComparer.Default.Equals(typeA, typeB))
+                return false;
+
+            if (typeA.TypeKind == TypeKind.Interface)
             {
-                if (caseSymbol.IsRecord)
+                switch (typeB.TypeKind)
                 {
+                    case TypeKind.Interface:
+                        return false;
+                    default:
+                        // check the reverse instead
+                        return AreDisjoint(typeB, typeA);
+                }
+            }
+            else if (typeA.TypeKind == TypeKind.TypeParameter)
+            {
+                // since type parameters are not statically known at compile time, they may contain any value, and thus not provably disjoint.
+                // In the case of constrained type parameters, if one is reference constrained and the other is value type constrained,
+                // the reference constrained one might be an interface, so it might contain the same value as B.
+                return false;
+            }
+            else if (typeA.TypeKind == TypeKind.Class)
+            {
+                switch (typeB.TypeKind)
+                {
+                    case TypeKind.Class:
+                        // If A and B are classes then they are disjoint if one is not a subtype of the other.
+                        return !IsSubTypeOf(typeA, typeB) && !IsSubTypeOf(typeB, typeA);
+                    case TypeKind.Interface:
+                        // if B is an interface, then A is disjoint if it is known to not implement the interface
+                        return typeA.IsSealed && !ImplementsOrExtendsInterface(typeA, typeB);
+                    case TypeKind.TypeParameter:
+                        // type parameters are never disjoint from other types
+                        return false;
+                    default:
+                        return true;
+                }
+            }
+            else if (typeA.TypeKind == TypeKind.Struct)
+            {
+                switch (typeB.TypeKind)
+                {
+                    case TypeKind.Interface:
+                        // if B is an interface, then A is disjoint if it is known to not implement the interface
+                        return !ImplementsOrExtendsInterface(typeA, typeB);
+                    case TypeKind.TypeParameter:
+                        return false;
+                    default:
+                        return true;
+                }
+            }
+            else if (typeA.TypeKind == TypeKind.Array)
+            {
+                switch (typeB.TypeKind)
+                {
+                    case TypeKind.Array:
+                        // arrays are disjoint if their element types are disjoint
+                        return AreDisjoint(((IArrayTypeSymbol)typeA).ElementType, ((IArrayTypeSymbol)typeB).ElementType);
+                    case TypeKind.Interface:
+                        // if B is an interface, then A is disjoint if it is known to not implement the interface
+                        return !ImplementsOrExtendsInterface(typeA, typeB);
+                    case TypeKind.TypeParameter:
+                        return false;
+                    default:
+                        return true;
+                }
+            }
+            else if (typeA.TypeKind == TypeKind.Enum)
+            {
+                return true;
+            }
+            else if (typeA.TypeKind == TypeKind.Delegate)
+            {
+                return true;
+            }
+
+            // otherwise, assume they are disjoint.
+            return true;
+        }
+
+        private static bool ImplementsOrExtendsInterface(ITypeSymbol type, ITypeSymbol interfaceType)
+        {
+            if (type.TypeKind == TypeKind.Interface)
+            {
+                return type.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, interfaceType));
+            }
+            else if (type.TypeKind == TypeKind.Class || type.TypeKind == TypeKind.Struct)
+            {
+                return type.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, interfaceType));
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        private static bool IsSubTypeOf(ITypeSymbol typeA, ITypeSymbol typeB)
+        {
+            if (SymbolEqualityComparer.Default.Equals(typeA, typeB))
+                return false;
+
+            if (typeB.TypeKind == TypeKind.Class && typeB.IsSealed)
+            {
+                // if B is a sealed class, then A cannot be a subtype of B
+                return false;
+            }
+
+            if (typeA.TypeKind == TypeKind.Class)
+            {
+                var baseType = typeA.BaseType;
+                while (baseType != null)
+                {
+                    if (SymbolEqualityComparer.Default.Equals(baseType, typeB))
+                        return true;
+                    baseType = baseType.BaseType;
+                }
+            }
+            else if (typeA.TypeKind == TypeKind.Struct)
+            {
+                // structs cannot be subtypes of other types
+                return false;
+            }
+            else if (typeA.TypeKind == TypeKind.Interface)
+            {
+                return typeA.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, typeB));
+            }
+
+            return false;
+        }
+
+        private IReadOnlyList<MemberDesc> GetDecomposibleMembers(ITypeSymbol type)
+        {
+            if (type.IsValueType
+                && type is INamedTypeSymbol nt)
+            {
+                if (type.IsRecord)
+                {
+                    var members = new List<MemberDesc>();
+
                     // break down record into members based on primary constructor..
                     // For records, the names of the parameters are the same as the names of the properties.
                     var primaryConstructor = nt.Constructors.FirstOrDefault(c => c.Parameters.Length > 0);
                     if (primaryConstructor != null && primaryConstructor.Parameters.Length > 0)
                     {
-                        return primaryConstructor.Parameters.Select(p => GetCaseMember(p.Name, p.Type, isParameter: true)).ToArray();
+                        members.AddRange(primaryConstructor.Parameters.Select(p => CreateCaseMember(p.Name, p.Type, isParameter: true)));
                     }
-                    else
-                    {
-                        // if no primary constructor, use public settable properties as members
-                        nt.GetMembers()
-                            .OfType<IPropertySymbol>()
-                            .Where(p => p.DeclaredAccessibility == Accessibility.Public
-                                && !p.IsStatic
-                                && p.GetMethod != null
-                                && p.SetMethod != null)
-                            .Select(p => GetCaseMember(p.Name, p.Type, isParameter: false))
-                            .ToArray();                       
-                    }
+
+                    // if no primary constructor, use public settable properties as members
+                    var propertyMembers = nt.GetMembers()
+                        .OfType<IPropertySymbol>()
+                        .Where(p => p.DeclaredAccessibility == Accessibility.Public
+                            && !p.IsStatic
+                            && p.GetMethod != null
+                            && p.SetMethod != null)
+                        .Select(p => CreateCaseMember(p.Name, p.Type, isParameter: false))
+                        .ToArray();       
+
+                    // add all assignable/initable property members that are not accounted for by the primary constructor parameters
+                    members.AddRange(propertyMembers.Where(pm => !members.Any(m => m.Name == pm.Name)));                
+
+                    return members;
                 }
-                else if (caseSymbol.IsTupleType)
+                else if (type.IsTupleType)
                 {
                     var constructor = nt.Constructors.FirstOrDefault(c => c.Parameters.Length > 0);
                     if (constructor != null)
                     {
-                        return constructor.Parameters.Select(p => GetCaseMember(GetTuplePropertyName(p), p.Type, isParameter: true)).ToArray();
+                        return constructor.Parameters.Select(p => CreateCaseMember(GetTuplePropertyName(p), p.Type, isParameter: true)).ToArray();
                     }
                 }
             }
 
             return Array.Empty<MemberDesc>();
+        }
+
+       /// <summary>
+        /// Gets a deconstructable member of a case type from a parameter symbol,
+        /// typically from the constructor of the type (record)
+        /// </summary>
+        private MemberDesc CreateCaseMember(string name, ITypeSymbol type, bool isParameter)
+        {
+            var kind = GetTypeDescKind(type);
+            var typeName = GetTypeFullName(type);
+            var storageCap = GetStorageCapable(type);
+            var nestedMembers = GetDecomposibleMembers(type);            
+            var typeDesc = new TypeDesc(typeName, kind, storageCap, nestedMembers);
+            var memberDesc = new MemberDesc(name, typeDesc, isParameter);
+            return memberDesc;
         }
 
         private static string GetTuplePropertyName(IParameterSymbol parameter)
@@ -367,6 +504,84 @@ namespace UnionTypes.Toolkit.Generators
             }
         }
 
+        private static StorageOverride GetStorageOverride(ITypeSymbol type, SyntaxNode? declarationNode = null)
+        {
+            if (declarationNode != null)
+            {
+                if (ContainsInTrivia(declarationNode, "box"))
+                    return StorageOverride.Box;
+                else if (ContainsInTrivia(declarationNode, "decompose"))
+                    return StorageOverride.Decompose;
+                else if (ContainsInTrivia(declarationNode, "isolate"))
+                    return StorageOverride.Isolate;
+                else if (ContainsInTrivia(declarationNode, "overlap"))
+                    return StorageOverride.Overlap;
+            }
+
+            return StorageOverride.None;
+        }
+
+        private static StorageCapable GetStorageCapable(ITypeSymbol type)
+        {
+            if (type.IsNullable())
+                return GetStorageCapable(type.GetNonNullableType());
+
+            switch (type.TypeKind)
+            {
+                case CATypeKind.Enum:
+                    return StorageCapable.Boxable | StorageCapable.Overlappable;
+                case CATypeKind.Struct:
+                    if (IsPrimitiveStruct(type))
+                    {
+                        return StorageCapable.Boxable | StorageCapable.Overlappable;
+                    }
+                    else if (type.IsTupleType)
+                    {
+                        // trust value tuples to not have hidden metadata
+                        if (IsOverlappableStruct(type))
+                        {
+                            return StorageCapable.Boxable | StorageCapable.Overlappable | StorageCapable.Decomposable;
+                        }
+                        else
+                        {
+                            return StorageCapable.Boxable | StorageCapable.Decomposable;
+                        }
+                    }
+                    else if (type.IsRecord)
+                    {
+                        var isDecomposable = IsDecomposableStruct(type);
+                        var isOverlappable = IsOverlappableStruct(type);
+                        
+                        return StorageCapable.Boxable
+                            | (isOverlappable ? StorageCapable.Overlappable : StorageCapable.None)
+                            | (isDecomposable ? StorageCapable.Decomposable : StorageCapable.None);
+                    }
+                    else if (type.IsRefLikeType)
+                    {
+                        // cannot be boxed, decomposed or overlapped
+                        return StorageCapable.None;
+                    }
+                    else if (IsOverlappableStruct(type))
+                    {
+                        return StorageCapable.Boxable | StorageCapable.Overlappable;
+                    }
+                    else
+                    {
+                        return StorageCapable.Boxable;
+                    }
+                case CATypeKind.Interface:
+                case CATypeKind.Class:
+                case CATypeKind.Array:
+                case CATypeKind.Dynamic:
+                case CATypeKind.Delegate:
+                    return StorageCapable.Boxable;                
+                case CATypeKind.TypeParameter:
+                    return StorageCapable.Boxable;
+                default:
+                    return StorageCapable.None;
+            }           
+        }
+
         private static TypeDescKind GetTypeDescKind(ITypeSymbol type)
         {
             switch (type.TypeKind)
@@ -378,68 +593,9 @@ namespace UnionTypes.Toolkit.Generators
                     {
                         return TypeDescKind.Primitive;
                     }
-                    else if (type.IsTupleType)
-                    {
-                        // trust value tuples to not have hidden metadata
-                        if (IsOverlappableStruct(type))
-                        {
-                            return TypeDescKind.OverlappableStruct;
-                        }
-                        else
-                        {
-                            return TypeDescKind.DecomposableStruct;
-                        }
-                    }
-                    else if (type.IsRecord)
-                    {
-                        var isDeconstructable = IsDecomposableStruct(type);
-                        var isOverlappable = IsOverlappableStruct(type);
-                        
-                        // only trust records to be overlappable if they are declared in source
-                        // such that we are identify all fields
-                        // if (type.IsDeclaredInSource())
-                        // {
-                            if (isOverlappable)
-                            {
-                                return TypeDescKind.OverlappableStruct;
-                            }
-                            else if (isDeconstructable)
-                            {
-                                return TypeDescKind.DecomposableStruct;
-                            }
-                            else
-                            {
-                                return TypeDescKind.Struct;
-                            }
-                            // }
-                            // else
-                            // {
-                            //     if (isDeconstructable)
-                            //     {
-                            //         return TypeKind.DeconstructableStruct;
-                            //     }
-                            //     else
-                            //     {
-                            //         return TypeKind.Struct;
-                            //     }
-                            // }
-                    }
                     else if (type.IsRefLikeType)
                     {
-                        // We don't actually handle this kind of type, but we will treat it as a struct for now, since it is a value type.
-                        return TypeDescKind.Struct;
-                    }
-                    else if (IsOverlappableStruct(type))
-                    {
-                        // if (type.IsDeclaredInSource())
-                        // {
-                        //     return TypeKind.OverlappableLocalStruct;
-                        // }
-                        // else
-                        // {
-                        //     return TypeKind.OverlappableForeignStruct;
-                        // }
-                        return TypeDescKind.OverlappableStruct;
+                        return TypeDescKind.RefStruct;
                     }
                     else
                     {
@@ -451,23 +607,25 @@ namespace UnionTypes.Toolkit.Generators
                 case CATypeKind.Array:
                 case CATypeKind.Dynamic:
                 case CATypeKind.Delegate:
-                    return TypeDescKind.Class;
-                
+                    return TypeDescKind.Class;                
                 case CATypeKind.TypeParameter:
                     var tp = (ITypeParameterSymbol)type;
                     if (tp.HasReferenceTypeConstraint)
-                        return TypeDescKind.Class;
+                        return TypeDescKind.ClassTypeParameter;
                     else if (tp.HasValueTypeConstraint)
-                        return TypeDescKind.Struct;
+                        return TypeDescKind.StructTypeParameter;
                     else
-                        return TypeDescKind.TypeParameter;
+                        return TypeDescKind.UnconstrainedTypeParameter;
                 default:
-                    return TypeDescKind.Struct;
+                    return TypeDescKind.Unknown;
             }
         }
 
         private static bool IsOverlappableType(ITypeSymbol type)
         {
+            if (type.IsNullable())
+                return IsOverlappableType(type.GetNonNullableType());
+
             switch (type.TypeKind)
             {
                 case CATypeKind.Enum:
@@ -482,16 +640,39 @@ namespace UnionTypes.Toolkit.Generators
 
         private static bool IsOverlappableStruct(ITypeSymbol type)
         {
-            return type.IsValueType
-                && type.GetMembers().OfType<IFieldSymbol>().All(f => IsOverlappableType(f.Type));
+            if (!type.IsValueType)
+                return false;
+
+            if (type.IsNullable())
+                return IsOverlappableStruct(type.GetNonNullableType());
+
+            // must be declared in source to be certain that all fields are actaully represented in the metadata
+            if (type.IsDeclaredInSource()
+                && type.GetMembers().OfType<IFieldSymbol>().All(f => IsOverlappableType(f.Type)))
+            {
+                return true;            
+            }
+
+            return false;
         }
 
+        /// <summary>
+        /// True if thie type can be reduced to its properties and reconstructed again from them.
+        /// This applies to tuples and records that have only public settable propereties or constructor/destructors.
+        /// </summary>
         private static bool IsDecomposableStruct(ITypeSymbol type)
         {
             if (type.IsValueType && (type.IsRecord || type.IsTupleType))
-            {
-                // all records and tuples are decomposible.               
-                return true;
+            {               
+                // most records and tuples are decomposable.               
+
+                // TODO: check for primary constructor
+
+                // check that all properties are either associated with the primary constructor or are settable.
+                return type.GetMembers()
+                    .OfType<IPropertySymbol>()
+                    .Where(p => p.DeclaredAccessibility == Accessibility.Public && !p.IsStatic)
+                    .All(p => p.GetMethod != null && p.SetMethod != null);
             }
 
             return false;
@@ -610,6 +791,14 @@ namespace UnionTypes.Toolkit.Generators
         private static string GetTypeFullName(ITypeSymbol type)
         {
             var name = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+            // allows use ? for annoted type names
+            if (type.NullableAnnotation == NullableAnnotation.Annotated
+                && !name.EndsWith("?"))
+            {
+                name += "?";
+            }
+
             return name;
         }
 

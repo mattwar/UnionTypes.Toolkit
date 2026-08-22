@@ -9,7 +9,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace UnionTypes.Toolkit.Generators
 {
-    internal static class RoslynExtensions
+    public static class RoslynExtensions
     {
         public static bool IsDeclaredInSource(this ITypeSymbol symbol)
         {
@@ -52,6 +52,34 @@ namespace UnionTypes.Toolkit.Generators
 
             argument = default;
             return false;
+        }
+
+        /// <summary>
+        /// True if the type is a nullable type (either a Nullable<T> or a reference type with nullable annotation).
+        /// </summary>
+        public static bool IsNullable(this ITypeSymbol type)
+        {
+            if (type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T })
+                return true;
+
+            return type.NullableAnnotation == NullableAnnotation.Annotated;
+        }
+
+        /// <summary>
+        /// Returns the non-nullable version of the type. 
+        /// If the type is a Nullable<T>, returns T. 
+        /// If the type is a reference type with nullable annotation, returns the same type with NotAnnotated. 
+        /// Otherwise, returns the original type.
+        /// </summary>
+        public static ITypeSymbol GetNonNullableType(this ITypeSymbol type)
+        {
+            if (type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nt)
+                return nt.TypeArguments[0];
+
+            if (type.NullableAnnotation == NullableAnnotation.Annotated)
+                return type.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
+
+            return type;
         }
     }
 }
