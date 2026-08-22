@@ -7,7 +7,7 @@ namespace UnionTypes.Toolkit
 {
     [System.Runtime.CompilerServices.Union]
     public struct FatUnion<T1, T2>
-        : System.Runtime.CompilerServices.IUnion
+    : System.Runtime.CompilerServices.IUnion
     {
         private readonly int _kind;
         private readonly T1? _value1;
@@ -58,7 +58,7 @@ namespace UnionTypes.Toolkit
 
     [System.Runtime.CompilerServices.Union]
     public struct FatUnion<T1, T2, T3>
-        : System.Runtime.CompilerServices.IUnion
+    : System.Runtime.CompilerServices.IUnion
     {
         private readonly int _kind;
         private readonly T1? _value1;
@@ -126,7 +126,7 @@ namespace UnionTypes.Toolkit
 
     [System.Runtime.CompilerServices.Union]
     public struct FatUnion<T1, T2, T3, T4>
-        : System.Runtime.CompilerServices.IUnion
+    : System.Runtime.CompilerServices.IUnion
     {
         private readonly int _kind;
         private readonly T1? _value1;
@@ -211,7 +211,7 @@ namespace UnionTypes.Toolkit
 
     [System.Runtime.CompilerServices.Union]
     public struct FatUnion<T1, T2, T3, T4, T5>
-        : System.Runtime.CompilerServices.IUnion
+    : System.Runtime.CompilerServices.IUnion
     {
         private readonly int _kind;
         private readonly T1? _value1;
@@ -313,7 +313,7 @@ namespace UnionTypes.Toolkit
 
     [System.Runtime.CompilerServices.Union]
     public struct FatUnion<T1, T2, T3, T4, T5, T6>
-        : System.Runtime.CompilerServices.IUnion
+    : System.Runtime.CompilerServices.IUnion
     {
         private readonly int _kind;
         private readonly T1? _value1;
@@ -432,7 +432,7 @@ namespace UnionTypes.Toolkit
 
     [System.Runtime.CompilerServices.Union]
     public struct FatUnion<T1, T2, T3, T4, T5, T6, T7>
-        : System.Runtime.CompilerServices.IUnion
+    : System.Runtime.CompilerServices.IUnion
     {
         private readonly int _kind;
         private readonly T1? _value1;
@@ -568,7 +568,7 @@ namespace UnionTypes.Toolkit
 
     [System.Runtime.CompilerServices.Union]
     public struct FatUnion<T1, T2, T3, T4, T5, T6, T7, T8>
-        : System.Runtime.CompilerServices.IUnion
+    : System.Runtime.CompilerServices.IUnion
     {
         private readonly int _kind;
         private readonly T1? _value1;
@@ -721,7 +721,7 @@ namespace UnionTypes.Toolkit
 
     [System.Runtime.CompilerServices.Union]
     public struct FatUnion<T1, T2, T3, T4, T5, T6, T7, T8, T9>
-        : System.Runtime.CompilerServices.IUnion
+    : System.Runtime.CompilerServices.IUnion
     {
         private readonly int _kind;
         private readonly T1? _value1;

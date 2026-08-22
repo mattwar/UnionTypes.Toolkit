@@ -9,8 +9,10 @@ namespace UnionTypes.Toolkit.Generators
 
 #nullable enable
 
-    public class CustomUnionGenerator : Generator
+    public class CustomUnionGenerator
     {
+        private readonly CodeWriter _writer = new CodeWriter();
+
         private static readonly string TagFieldName = "_kind";
         private static readonly string DataFieldPrefix = "_value";
         private static readonly string OverlappedFieldName = "_overlapped";
@@ -25,21 +27,21 @@ namespace UnionTypes.Toolkit.Generators
 
         public string Generate(UnionInfo union)
         {
-            WriteLine("using System;");
-            WriteLine("using System.Collections.Generic;");
-            WriteLine("using System.Diagnostics.CodeAnalysis;");
-            WriteLine("using System.Runtime.CompilerServices;");
-            WriteLine("using System.Runtime.InteropServices;");
-            WriteLine("#nullable enable");
-            WriteLine("#pragma warning disable CS8600");
-            WriteLine("#pragma warning disable CS8601");
-            WriteLine("#pragma warning disable CS8603");
-            WriteLine("#pragma warning disable CS8604");
-            WriteLine("#pragma warning disable CS8605");
-            WriteLine("#pragma warning disable CS8618");
-            WriteLine();
+            _writer.WriteLine("using System;");
+            _writer.WriteLine("using System.Collections.Generic;");
+            _writer.WriteLine("using System.Diagnostics.CodeAnalysis;");
+            _writer.WriteLine("using System.Runtime.CompilerServices;");
+            _writer.WriteLine("using System.Runtime.InteropServices;");
+            _writer.WriteLine("#nullable enable");
+            _writer.WriteLine("#pragma warning disable CS8600");
+            _writer.WriteLine("#pragma warning disable CS8601");
+            _writer.WriteLine("#pragma warning disable CS8603");
+            _writer.WriteLine("#pragma warning disable CS8604");
+            _writer.WriteLine("#pragma warning disable CS8605");
+            _writer.WriteLine("#pragma warning disable CS8618");
+            _writer.WriteLine();
             WriteUnionType(union);
-            return GeneratedText;
+            return _writer.WrittenText;
         }
 
         /// <summary>
@@ -52,33 +54,33 @@ namespace UnionTypes.Toolkit.Generators
 
             if (!string.IsNullOrEmpty(union.Namespace))
             {
-                WriteLine($"namespace {union.Namespace}");
-                WriteBraceNested(() =>
+                _writer.WriteLine($"namespace {union.Namespace}");
+                _writer.WriteBraceNested(() =>
                 {
-                    Write();
+                    WriteUnion();
                 });
             }
             else
             {
-                Write();
+                WriteUnion();
             }
 
-            void Write()
+            void WriteUnion()
             {
-                WriteLine("[System.Runtime.CompilerServices.Union]");
-                WriteLine($"{union.Accessibility} partial struct {union.DeclarationName} : System.Runtime.CompilerServices.IUnion");
-                WriteBraceNested(() =>
+                _writer.WriteLine("[System.Runtime.CompilerServices.Union]");
+                _writer.WriteLine($"{union.Accessibility} partial struct {union.DeclarationName} : System.Runtime.CompilerServices.IUnion");
+                _writer.WriteBraceNested(() =>
                 {
-                    WriteLineSeparatedBlocks(() =>
+                    _writer.WriteLineSeparatedBlocks(() =>
                     {
-                        WriteBlock(() => WriteStorageFields(layout));
-                        WriteBlock(() => WriteOverlappedType(layout));
-                        WriteBlock(() => WriteCaseTypes(layout));
-                        WriteBlock(() => WriteConstructors(layout));
-                        WriteBlock(() => WriteCaseAccessors(layout));
-                        WriteBlock(() => WriteValueProperty(layout));
-                        WriteBlock(() => WriteHasValue(layout));
-                        WriteBlock(() => WriteTryGetValueMethods(layout));
+                        _writer.WriteBlock(() => WriteStorageFields(layout));
+                        _writer.WriteBlock(() => WriteOverlappedTypeDeclaration(layout));
+                        _writer.WriteBlock(() => WriteGeneratedCaseTypeDeclarations(layout));
+                        _writer.WriteBlock(() => WriteCaseConstructors(layout));
+                        _writer.WriteBlock(() => WriteCaseAccessors(layout));
+                        _writer.WriteBlock(() => WriteValueProperty(layout));
+                        _writer.WriteBlock(() => WriteHasValueProperty(layout));
+                        _writer.WriteBlock(() => WriteTryGetValueMethods(layout));
                     });
                 });
             }
@@ -90,33 +92,33 @@ namespace UnionTypes.Toolkit.Generators
         private void WriteStorageFields(UnionLayout layout)
         {
             if (layout.TagField != null)
-                WriteLine($"private readonly {layout.TagField.Type.TypeName} {layout.TagField.Name};");
+                _writer.WriteLine($"private readonly {layout.TagField.Type.TypeName} {layout.TagField.Name};");
 
             if (layout.OverlappedField != null)
-                WriteLine($"private readonly {layout.OverlappedField.Type.TypeName} {layout.OverlappedField.Name};");
+                _writer.WriteLine($"private readonly {layout.OverlappedField.Type.TypeName} {layout.OverlappedField.Name};");
 
             foreach (var field in layout.DataFields)
             {
-                WriteLine($"private readonly {field.Type.TypeName} {field.Name};");
+                _writer.WriteLine($"private readonly {field.Type.TypeName} {field.Name};");
             }
         }
 
         /// <summary>
         /// Writes the declaration of the type that holds the overlapped elements of each case, if at least two cases have overlappable elements.
         /// </summary>
-        private void WriteOverlappedType(UnionLayout layout)
+        private void WriteOverlappedTypeDeclaration(UnionLayout layout)
         {
             if (layout.OverlappedField != null)
             {
-                WriteLine($"[StructLayout(LayoutKind.Explicit)]");
-                WriteLine($"private struct {OverlappedTypeName}");
-                WriteBraceNested(() =>
+                _writer.WriteLine($"[StructLayout(LayoutKind.Explicit)]");
+                _writer.WriteLine($"private struct {OverlappedTypeName}");
+                _writer.WriteBraceNested(() =>
                 {
                     foreach (var caseLayout in layout.CaseLayouts)
                     {
                         if (caseLayout.OverlappedCaseField != null)
                         {
-                            WriteLine($"[FieldOffset(0)] public {caseLayout.OverlappedCaseField.Type.TypeName} {caseLayout.OverlappedCaseField.Name};");
+                            _writer.WriteLine($"[FieldOffset(0)] public {caseLayout.OverlappedCaseField.Type.TypeName} {caseLayout.OverlappedCaseField.Name};");
                         }
                     }
                 });
@@ -126,14 +128,14 @@ namespace UnionTypes.Toolkit.Generators
         /// <summary>
         /// Writes a declaration for any case types that require generation as a record struct.
         /// </summary>
-        private void WriteCaseTypes(UnionLayout layout)
+        private void WriteGeneratedCaseTypeDeclarations(UnionLayout layout)
         {
             foreach (var caseInfo in layout.Union.Cases)
             {
                 if (caseInfo.GenerateType)
                 {
                     var members = string.Join(", ", caseInfo.Type.Members.Select(m => $"{m.Type.TypeName} {m.Name}"));
-                    WriteLine($"public record struct {caseInfo.Type.TypeName}({members});");
+                    _writer.WriteLine($"public record struct {caseInfo.Type.TypeName}({members});");
                 }
             }
         }
@@ -141,13 +143,13 @@ namespace UnionTypes.Toolkit.Generators
         /// <summary>
         /// Writes public constructors for all the case types.
         /// </summary>
-        private void WriteConstructors(UnionLayout layout)
+        private void WriteCaseConstructors(UnionLayout layout)
         {
-            WriteLineSeparatedBlocks(() =>
+            _writer.WriteLineSeparatedBlocks(() =>
             {
                 foreach (var caseLayout in layout.CaseLayouts)
                 {
-                    WriteBlock(() => WriteConstructor(caseLayout));
+                    _writer.WriteBlock(() => WriteConstructor(caseLayout));
                 }
             });
 
@@ -156,15 +158,15 @@ namespace UnionTypes.Toolkit.Generators
             void WriteConstructor(CaseLayout caseLayout)
             {
                 var caseType = caseLayout.Case.Type;
-                WriteLine($"public {layout.Union.SimpleName}({caseType.TypeName} value)");
-                WriteBraceNested(() =>
+                _writer.WriteLine($"public {layout.Union.SimpleName}({caseType.TypeName} value)");
+                _writer.WriteBraceNested(() =>
                 {
                     if (caseType.IsReference
                         || caseType.MightBeNullable)
                     {
                         // null values become equivalent of default for the struct
-                        WriteLine("if (value is {} v)");
-                        WriteBraceNested(() =>
+                        _writer.WriteLine("if (value is {} v)");
+                        _writer.WriteBraceNested(() =>
                         {
                             WriteBody("v");                           
                         });
@@ -178,7 +180,7 @@ namespace UnionTypes.Toolkit.Generators
                     {                       
                         if (layout.TagField != null)
                         {
-                            WriteLine($"{layout.TagField.Name} = {caseLayout.TagValue};");
+                            _writer.WriteLine($"{layout.TagField.Name} = {caseLayout.TagValue};");
                         }
 
                         if (caseLayout.IsDecomposed)
@@ -188,7 +190,7 @@ namespace UnionTypes.Toolkit.Generators
                         else if (caseLayout.Field != null)
                         {
                             WriteFieldReference(caseLayout.Field);
-                            WriteLine($" = {valueName};");
+                            _writer.WriteLine($" = {valueName};");
                         }
                         else
                         {
@@ -217,7 +219,7 @@ namespace UnionTypes.Toolkit.Generators
                         {
                             var tuple = $"({string.Join(", ", overlappedLocals.Select(loc => loc.LocalName))})";
                             WriteFieldReference(caseLayout.OverlappedCaseField);
-                            WriteLine($" = {tuple};");
+                            _writer.WriteLine($" = {tuple};");
                         }
                     }
 
@@ -230,13 +232,13 @@ namespace UnionTypes.Toolkit.Generators
                         if (parameterMembers.Count > 1)
                         {
                             // use deconstruction syntax is two or more members
-                            Write("(");
+                            _writer.Write("(");
 
                             for (int i = 0; i < parameterMembers.Count; i++)
                             {
                                 var member = parameterMembers[i];
                                 if (i > 0)
-                                    Write(", ");
+                                    _writer.Write(", ");
 
                                 if (member.Field != null)
                                 {
@@ -248,7 +250,7 @@ namespace UnionTypes.Toolkit.Generators
                                     var localName = $"{LocalVariablePrefix}{locals.Count}";
                                     var local = new LocalMember(localName, member);
                                     locals.Add(local);
-                                    Write($"var {localName}");
+                                    _writer.Write($"var {localName}");
                                 }
                                 else
                                 {
@@ -256,13 +258,13 @@ namespace UnionTypes.Toolkit.Generators
                                 }
                             }
 
-                            WriteLine($") = {source};");
+                            _writer.WriteLine($") = {source};");
                         }
                         else if (parameterMembers.Count == 1)
                         {
                             // if only one parameter, cannot use deconstruction syntax, so call method directly
                             var member = parameterMembers[0];
-                            WriteLine($"{source}.Deconstruct(out var v);");
+                            _writer.WriteLine($"{source}.Deconstruct(out var v);");
 
                             if (member.Field != null)
                             {
@@ -273,10 +275,10 @@ namespace UnionTypes.Toolkit.Generators
                                 var localName = $"{LocalVariablePrefix}{locals.Count}";
                                 var local = new LocalMember(localName, member);
                                 locals.Add(local);
-                                Write(localName);
+                                _writer.Write(localName);
                             }
 
-                            WriteLine(" = v;");
+                            _writer.WriteLine(" = v;");
                         }
 
                         // access property members individually
@@ -288,9 +290,9 @@ namespace UnionTypes.Toolkit.Generators
                                 if (member.Field != null)
                                 {
                                     WriteFieldReference(member.Field);
-                                    Write(" = ");
-                                    Write($"{source}.{member.Member.Name}");
-                                    WriteLine(";");
+                                    _writer.Write(" = ");
+                                    _writer.Write($"{source}.{member.Member.Name}");
+                                    _writer.WriteLine(";");
                                 }
                                 else if (member.IsDecomposed || member.IsOverlapped)
                                 {
@@ -298,7 +300,7 @@ namespace UnionTypes.Toolkit.Generators
                                     var localName = $"{LocalVariablePrefix}{locals.Count}";
                                     var local = new LocalMember(localName, member);
                                     locals.Add(local);
-                                    Write($"var {localName} = {source}.{member.Member.Name};");
+                                    _writer.Write($"var {localName} = {source}.{member.Member.Name};");
                                 }
                                 else
                                 {
@@ -334,12 +336,12 @@ namespace UnionTypes.Toolkit.Generators
             if (layout.TagField == null)
                 return;
 
-            WriteLineSeparatedBlocks(() =>
+            _writer.WriteLineSeparatedBlocks(() =>
             {
                 for (int i = 0; i < layout.CaseLayouts.Count; i++)
                 {
                     var caseLayout = layout.CaseLayouts[i];
-                    WriteBlock(() => WriteCaseAccessor(caseLayout));
+                    _writer.WriteBlock(() => WriteCaseAccessor(caseLayout));
                 }
             });
 
@@ -351,8 +353,8 @@ namespace UnionTypes.Toolkit.Generators
 
                 if (locals.Count > 0)
                 {
-                    WriteLine($"private {caseLayout.StorageType.TypeName} {AccessorNamePrefix}{caseLayout.TagValue}()");
-                    WriteBraceNested(() =>
+                    _writer.WriteLine($"private {caseLayout.StorageType.TypeName} {AccessorNamePrefix}{caseLayout.TagValue}()");
+                    _writer.WriteBraceNested(() =>
                     {
                         // multi-element overlapped data into locals
                         if (caseLayout.OverlappedCaseField != null)
@@ -360,21 +362,21 @@ namespace UnionTypes.Toolkit.Generators
                             var deconstruct = locals.Count > 1 
                                 ? $"({string.Join(", ", locals.Select(loc => $"var {loc.LocalName}"))})"
                                 : $"var {locals[0].LocalName}";
-                            Write($"{deconstruct} = ");
+                            _writer.Write($"{deconstruct} = ");
                             WriteFieldReference(caseLayout.OverlappedCaseField);
-                            WriteLine(";");
+                            _writer.WriteLine(";");
                         }
 
-                        Write("return ");
+                        _writer.Write("return ");
                         AccessElement(caseLayout, map);
-                        WriteLine(";");
+                        _writer.WriteLine(";");
                     });
                 }
                 else
                 {
-                    Write($"private {caseLayout.StorageType.TypeName} {AccessorNamePrefix}{caseLayout.TagValue}() => ");
+                    _writer.Write($"private {caseLayout.StorageType.TypeName} {AccessorNamePrefix}{caseLayout.TagValue}() => ");
                     AccessElement(caseLayout, map);
-                    WriteLine(";");
+                    _writer.WriteLine(";");
                 }               
             }
 
@@ -401,7 +403,7 @@ namespace UnionTypes.Toolkit.Generators
             {
                 if (localsMap.TryGetValue(elementLayout, out var local))
                 {
-                    Write(local.LocalName);
+                    _writer.Write(local.LocalName);
                 }
                 else if (elementLayout.IsDecomposed)
                 {
@@ -410,7 +412,7 @@ namespace UnionTypes.Toolkit.Generators
                 else if (elementLayout.Field != null)
                 {
                     if (!elementLayout.Field.Type.Equals(elementLayout.StorageType))
-                        Write($"({elementLayout.StorageType.TypeName})");
+                        _writer.Write($"({elementLayout.StorageType.TypeName})");
 
                     WriteFieldReference(elementLayout.Field);
                 }
@@ -426,33 +428,33 @@ namespace UnionTypes.Toolkit.Generators
                 var parameterMembers = elementLayout.Members.Where(m => m.Member.IsParameter).ToList();
                 var propertyMembers = elementLayout.Members.Where(m => !m.Member.IsParameter).ToList();
 
-                Write("new (");
+                _writer.Write("new (");
                 
                 for (int i = 0; i < parameterMembers.Count; i++)
                 {
                     if (i > 0)
-                        Write(", ");
+                        _writer.Write(", ");
 
                     var memberLayout = parameterMembers[i];
                     AccessElement(memberLayout, localsMap);
                 }
 
-                Write(")");                       
+                _writer.Write(")");                       
 
                 if (propertyMembers.Count > 0)
                 {
-                    Write(" { ");
+                    _writer.Write(" { ");
                     for (int i = 0; i < propertyMembers.Count; i++)
                     {
                         if (i > 0)
-                            Write(", ");
+                            _writer.Write(", ");
 
                         var memberLayout = propertyMembers[i];
-                        Write($"{memberLayout.Member.Name} = ");
+                        _writer.Write($"{memberLayout.Member.Name} = ");
                         AccessElement(memberLayout, localsMap);
                     }
 
-                    Write(" }");
+                    _writer.Write(" }");
                 }
             }
         }
@@ -465,9 +467,9 @@ namespace UnionTypes.Toolkit.Generators
             if (field.Path != null)
             {
                 WriteFieldReference(field.Path);
-                Write(".");
+                _writer.Write(".");
             }
-            Write(field.Name);
+            _writer.Write(field.Name);
         }
 
         /// <summary>
@@ -493,30 +495,30 @@ namespace UnionTypes.Toolkit.Generators
         /// </summary>
         private void WriteValueProperty(UnionLayout layout)
         {
-            WriteLine($"public object? Value =>");
-            WriteNested(() =>
+            _writer.WriteLine($"public object? Value =>");
+            _writer.WriteNested(() =>
             {
                 if (layout.TagField != null)
                 {
                     // the type has a tag field, so use a switch expression to access/reconstruct the appropriate case value.`
-                    WriteLine($"{layout.TagField.Name} switch");
-                    WriteLine("{");
-                    WriteNested(() =>
+                    _writer.WriteLine($"{layout.TagField.Name} switch");
+                    _writer.WriteLine("{");
+                    _writer.WriteNested(() =>
                     {
                         foreach (var caseLayout in layout.CaseLayouts)
                         {
                             var caseValue = GetCaseAccessExpression(layout, caseLayout);
-                            WriteLine($"{caseLayout.TagValue} => {caseValue},");
+                            _writer.WriteLine($"{caseLayout.TagValue} => {caseValue},");
                         }
-                        WriteLine("_ => null");
+                        _writer.WriteLine("_ => null");
                     });
-                    WriteLine("};");
+                    _writer.WriteLine("};");
                 }
                 else if (layout.DataFields.Count == 1)
                 {
                     // the value is only ever stored in exactly one field (boxed layout) so just return that field value.
                     WriteFieldReference(layout.DataFields[0]);
-                    WriteLine(";");
+                    _writer.WriteLine(";");
                 }
                 else
                 {
@@ -529,13 +531,13 @@ namespace UnionTypes.Toolkit.Generators
         /// <summary>
         /// Generates a HasValue property for tagged layout models.
         /// </summary>
-        private void WriteHasValue(UnionLayout layout)
+        private void WriteHasValueProperty(UnionLayout layout)
         {
             if (layout.TagField != null)
             {
-                Write($"public bool HasValue => ");
+                _writer.Write($"public bool HasValue => ");
                 WriteFieldReference(layout.TagField);
-                WriteLine(" != 0;");
+                _writer.WriteLine(" != 0;");
             }
         }
 
@@ -548,25 +550,25 @@ namespace UnionTypes.Toolkit.Generators
             if (layout.TagField == null)
                 return;
 
-            WriteLineSeparatedBlocks(() =>
+            _writer.WriteLineSeparatedBlocks(() =>
             {
                 foreach (var caseLayout in layout.CaseLayouts)
                 {
-                    WriteBlock(() => WriteCaseTypeGetValue(caseLayout));
+                    _writer.WriteBlock(() => WriteCaseTypeGetValue(caseLayout));
                 }
             });
 
             void WriteCaseTypeGetValue(CaseLayout caseLayout)
             {
-                WriteLine($"{caseLayout.Case.Accessibility} bool TryGetValue([NotNullWhen(true)] out {caseLayout.Case.Type.TypeName} value)");
-                WriteBraceNested(() =>
+                _writer.WriteLine($"{caseLayout.Case.Accessibility} bool TryGetValue([NotNullWhen(true)] out {caseLayout.Case.Type.TypeName} value)");
+                _writer.WriteBraceNested(() =>
                 {
                     if (caseLayout.Case.NonDisjointCases.Count > 0)
                     {
                         // the case type is not entirely distinct from other case's types, 
                         // so we need to check values encoded as other cases to see if they match this case's type.
-                        WriteLine("switch (_kind)");
-                        WriteBraceNested(() =>
+                        _writer.WriteLine("switch (_kind)");
+                        _writer.WriteBraceNested(() =>
                         {
                             for (int i = 0; i < layout.CaseLayouts.Count; i++)
                             {
@@ -575,43 +577,43 @@ namespace UnionTypes.Toolkit.Generators
                                 if (otherCaseLayout.TagValue == caseLayout.TagValue)
                                 {
                                     // this is my own case, so just return the value
-                                    WriteLine($"case {otherCaseLayout.TagValue}:");
-                                    WriteLineNested($"value = {caseAccessExpr};");
+                                    _writer.WriteLine($"case {otherCaseLayout.TagValue}:");
+                                    _writer.WriteLineNested($"value = {caseAccessExpr};");
                                     if (caseLayout.Case.Type.MightBeNullable)
-                                        WriteLineNested("return value is not null;");
+                                        _writer.WriteLineNested("return value is not null;");
                                     else 
-                                        WriteLineNested("return true;");
+                                        _writer.WriteLineNested("return true;");
                                 }
                                 else if (caseLayout.Case.NonDisjointCases.Contains(i))
                                 {
                                     // this is a different case, so test it against this case's type and return the value if it matches
-                                    WriteLine($"case {otherCaseLayout.TagValue} when {caseAccessExpr} is {caseLayout.StorageType.TypeName} v:");
-                                    WriteLineNested($"value = v;");
+                                    _writer.WriteLine($"case {otherCaseLayout.TagValue} when {caseAccessExpr} is {caseLayout.StorageType.TypeName} v:");
+                                    _writer.WriteLineNested($"value = v;");
                                     if (caseLayout.Case.Type.MightBeNullable)
-                                        WriteLineNested("return value is not null;");
+                                        _writer.WriteLineNested("return value is not null;");
                                     else 
-                                        WriteLineNested("return true;");
+                                        _writer.WriteLineNested("return true;");
                                 }
                             }
-                            WriteLine("default:");
-                            WriteLineNested("value = default!;");
-                            WriteLineNested("return false;");
+                            _writer.WriteLine("default:");
+                            _writer.WriteLineNested("value = default!;");
+                            _writer.WriteLineNested("return false;");
                         });
                     }
                     else
                     {
-                        WriteLine($"if ({layout.TagField.Name} == {caseLayout.TagValue})");
-                        WriteBraceNested(() =>
+                        _writer.WriteLine($"if ({layout.TagField.Name} == {caseLayout.TagValue})");
+                        _writer.WriteBraceNested(() =>
                         {
                             var caseValue = GetCaseAccessExpression(layout, caseLayout);
-                            WriteLine($"value = {caseValue};");
-                            WriteLine("return true;");
+                            _writer.WriteLine($"value = {caseValue};");
+                            _writer.WriteLine("return true;");
                         });
-                        WriteLine("else");
-                        WriteBraceNested(() =>
+                        _writer.WriteLine("else");
+                        _writer.WriteBraceNested(() =>
                         {
-                            WriteLine("value = default!;");
-                            WriteLine("return false;");
+                            _writer.WriteLine("value = default!;");
+                            _writer.WriteLine("return false;");
                         });                       
                     }
                 });

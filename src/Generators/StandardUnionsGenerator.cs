@@ -10,8 +10,9 @@ namespace UnionTypes.Toolkit.Generators
 
 #nullable enable
 
-    public class StandardUnionsGenerator : Generator
+    public class StandardUnionsGenerator
     {
+        private readonly CodeWriter _writer = new CodeWriter();
         private readonly string _baseTypeName;
         private readonly int _maxTypeArgs;
         private readonly string _namespaceName;
@@ -27,20 +28,20 @@ namespace UnionTypes.Toolkit.Generators
         {
             var generator = new StandardUnionsGenerator(baseTypeName, namespaceName, maxTypeArgs);
             generator.WriteFile();
-            return generator.GeneratedText;
+            return generator._writer.WrittenText;
         }
 
         private void WriteFile()
         {
-            WriteLine("using System;");
-            WriteLine("using System.Collections.Generic;");
-            WriteLine("using System.Diagnostics.CodeAnalysis;");
-            WriteLine("#nullable enable");
-            WriteLine();
+            _writer.WriteLine("using System;");
+            _writer.WriteLine("using System.Collections.Generic;");
+            _writer.WriteLine("using System.Diagnostics.CodeAnalysis;");
+            _writer.WriteLine("#nullable enable");
+            _writer.WriteLine();
             if (!string.IsNullOrEmpty(_namespaceName))
             {
-                WriteLine($"namespace {_namespaceName}");
-                WriteBraceNested(() =>
+                _writer.WriteLine($"namespace {_namespaceName}");
+                _writer.WriteBraceNested(() =>
                 {
                     WriteStandardUnionTypes();
                 });
@@ -57,7 +58,7 @@ namespace UnionTypes.Toolkit.Generators
             {
                 WriteStandardUnionType(nTypeArgs);
                 if (nTypeArgs < _maxTypeArgs)
-                    WriteLine();
+                    _writer.WriteLine();
             }
         }
 
@@ -71,23 +72,23 @@ namespace UnionTypes.Toolkit.Generators
             _typeArgList = string.Join(", ", Enumerable.Range(1, nTypeArgs).Select(n => $"T{n}"));
             _unionType = $"{_baseTypeName}<{_typeArgList}>";
 
-            WriteLine($"[System.Runtime.CompilerServices.Union]");
-            WriteLine($"public struct {_unionType}");
-            WriteLineNested($": System.Runtime.CompilerServices.IUnion");
-            WriteBraceNested(() =>
+            _writer.WriteLine($"[System.Runtime.CompilerServices.Union]");
+            _writer.WriteLine($"public struct {_unionType}");
+            _writer.WriteLineNested($": System.Runtime.CompilerServices.IUnion");
+            _writer.WriteBraceNested(() =>
             {
-                WriteLineSeparatedBlocks(() =>
+                _writer.WriteLineSeparatedBlocks(() =>
                 {
-                    WriteBlock(() =>
+                    _writer.WriteBlock(() =>
                     {
-                        WriteLine("public object? Value { get; private set;}");
+                        _writer.WriteLine("public object? Value { get; private set;}");
                     });
 
-                    WriteBlock(() =>
+                    _writer.WriteBlock(() =>
                     {
                         for (int i = 1; i <= _nTypeArgs; i++)
                         {
-                            WriteLine($"public Union(T{i} value) {{ Value = value; }}");
+                            _writer.WriteLine($"public Union(T{i} value) {{ Value = value; }}");
                         }
                     });
                 });
