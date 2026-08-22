@@ -4,6 +4,11 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 #nullable enable
+#pragma warning disable CS8600
+#pragma warning disable CS8601
+#pragma warning disable CS8603
+#pragma warning disable CS8604
+#pragma warning disable CS8605
 #pragma warning disable CS8618
 
 [System.Runtime.CompilerServices.Union]
@@ -32,6 +37,7 @@ public partial struct SimplePrimitivesUnion : System.Runtime.CompilerServices.IU
     }
 
     private int GetCase1() => _overlapped.Case1;
+
     private float GetCase2() => _overlapped.Case2;
 
     public object? Value =>
