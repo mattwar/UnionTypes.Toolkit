@@ -11,7 +11,7 @@
 	</PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Generators\Generator.cs" Link="Generator.cs" />
+    <Compile Include="..\Generators\CodeWriter.cs" Link="CodeWriter.cs" />
     <Compile Include="..\Generators\CustomUnionGenerator.cs" Link="CustomUnionGenerator.cs" />
   </ItemGroup>
 

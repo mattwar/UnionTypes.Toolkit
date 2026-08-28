@@ -20,8 +20,8 @@ public partial struct TagLikeUnion : System.Runtime.CompilerServices.IUnion
     [StructLayout(LayoutKind.Explicit)]
     private struct Overlapped
     {
-        [FieldOffset(0)] public Open Case1;
-        [FieldOffset(0)] public Closed Case2;
+        [FieldOffset(0)] public float Case1;
+        [FieldOffset(0)] public float Case2;
     }
 
     public record struct Open(float Percent);
@@ -30,18 +30,28 @@ public partial struct TagLikeUnion : System.Runtime.CompilerServices.IUnion
     public TagLikeUnion(Open value)
     {
         _kind = 1;
-        _overlapped.Case1 = value;
+        value.Deconstruct(out var v);
+        _overlapped.Case1 = v;
     }
 
     public TagLikeUnion(Closed value)
     {
         _kind = 2;
-        _overlapped.Case2 = value;
+        value.Deconstruct(out var v);
+        _overlapped.Case2 = v;
     }
 
-    private Open GetCase1() => _overlapped.Case1;
+    private Open GetCase1()
+    {
+        var tmp0 = _overlapped.Case1;
+        return new (tmp0);
+    }
 
-    private Closed GetCase2() => _overlapped.Case2;
+    private Closed GetCase2()
+    {
+        var tmp0 = _overlapped.Case2;
+        return new (tmp0);
+    }
 
     public object? Value =>
         _kind switch

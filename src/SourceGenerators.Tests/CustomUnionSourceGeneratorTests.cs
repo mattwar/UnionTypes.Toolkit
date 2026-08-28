@@ -220,27 +220,10 @@ public class CustomUnionSourceGeneratorTests
 
     [TestMethod]
     public void TestCaseLayoutOverrides_Overlap()
-    {
-        // prove that w/o @overlap, the generator isolates the cases into separate fields
-        TestGenerator(
-            """
-            using System;
-
-            public partial struct MyUnion
-            {
-                partial void Cases(
-                    int case1, 
-                    DateOnly case2          // not known to be overlappable
-                    );
-            }
-            """,
-            generatedText =>
-            {
-                Assert.IsFalse(HasOverlappedField(generatedText));
-                Assert.IsTrue(HasValueFields(generatedText, "int", "global::System.DateOnly"));
-            });
-
-        // prove that with the @overlap annotation they generator will overlap the case 
+    {   
+        // currently, overlap will be inferred from any type this is a struct without reference type members.
+        // and if it is overlappable, the @overlap is perferred.
+        // so the @overlap annotation does not actually do anything except cause a diagnostic if the type is deemed not be be overlappable.
         TestGenerator(
             """
             using System;
@@ -261,6 +244,22 @@ public class CustomUnionSourceGeneratorTests
                 Assert.IsTrue(HasOverlappedCaseField(generatedText, 2, "global::System.DateOnly"));
                 Assert.IsFalse(HasValueFields(generatedText)); 
             });
+
+        TestGenerator(
+            """
+            using System;
+
+            public partial struct MyUnion
+            {
+                partial void Cases(
+                    int case1, 
+                    // @overlap
+                    <<string case2>>
+                    );
+            }
+            """,
+            ["UT0002"]
+            );
     }
 
     [TestMethod]
@@ -302,7 +301,7 @@ public class CustomUnionSourceGeneratorTests
                     int case1, 
                     // @isolate
                     float case2,
-                    // @isolate
+                    // @isolate  -- but will store in object field since it is a reference type
                     string case3
                     );
             }
@@ -310,7 +309,7 @@ public class CustomUnionSourceGeneratorTests
             generatedText =>
             {
                 Assert.IsFalse(HasOverlappedField(generatedText));
-                Assert.IsTrue(HasValueFields(generatedText, "int", "float", "string"));
+                Assert.IsTrue(HasValueFields(generatedText, "int", "float", "object?"));  // 
             });
     }
 
@@ -527,7 +526,8 @@ public class CustomUnionSourceGeneratorTests
             """,
             generatedText =>
             {
-                Assert.IsTrue(HasValueFields(generatedText, "global::OtherNamespace.A", "global::OtherNamespace.B"));
+                // will be decomposed because it is a struct with public fields (no shenanigans)
+                Assert.IsTrue(HasValueFields(generatedText, "int", "object?"));
             });
     }
 
@@ -549,7 +549,7 @@ public class CustomUnionSourceGeneratorTests
             """,
             generatedText =>
             {
-                Assert.IsTrue(HasValueFields(generatedText, "global::OtherType.A", "global::OtherType.B"));
+                Assert.IsTrue(HasValueFields(generatedText, "int", "object?"));
             });
     }
 
@@ -725,6 +725,78 @@ public class CustomUnionSourceGeneratorTests
             });
     }
 
+    [TestMethod]
+    public void TestDiagnostics_UnsupportedCaseTypes()
+    {
+        // prove that unions with cases or case members that have unsupported types (e.g. pointers, spans, etc.) produce diagnostics.
+        TestGenerator(
+            """
+            internal partial struct MyUnion
+            {
+                partial void Cases(
+                    <<Span<int> case1>>, 
+                    <<ReadOnlySpan<float> case2>>,
+                    <<int* case3>>,
+                    <<A case4>>,
+                    <<B case5>>
+                    );
+            }
+
+            public ref struct A { public int X; }
+            public struct B { public int* X; }
+            """,
+            ["UT0001", "UT0001", "UT0001", "UT0001", "UT0001"]
+            );
+    }
+
+    [TestMethod]
+    public void TestDiagnostics_NonoverlappableCaseTypes()
+    {
+        TestGenerator(
+            """
+            internal partial struct MyUnion
+            {
+                partial void Cases(
+                    int case1, 
+                    // @overlap
+                    <<string case2>>,
+                    // @overlap
+                    <<AB case3>>
+                    );
+            }
+
+            struct AB { public int X; public string Y; }
+            """,
+            ["UT0002", "UT0002"]
+            );
+    }
+
+    [TestMethod]
+    public void TestDiagnostics_NondecomposableCaseTypes()
+    {
+        TestGenerator(
+            """
+            internal partial struct MyUnion
+            {
+                partial void Cases(
+                    // @decompose
+                    <<int case1>>,       // no members to decompose
+                    // @decompose,
+                    <<string case2>>,    // not a struct
+                    // @decompose
+                    A case3,             // okay?: has non-public field/properties but 'trust-me bro'                    
+                    // @decompose        // okay
+                    B case4
+                    );
+            }
+
+            struct A { public int X; public string Y; internal int z; }
+            struct B { public int X { get; set; } public string Y { get; init; } }
+            """,
+            ["UT0003", "UT0003"]
+            );
+    }
+
     /// <summary>
     /// Returns true if the generated text contains a declaration for the overlapped field.
     /// </summary>
@@ -783,30 +855,116 @@ public class CustomUnionSourceGeneratorTests
         return text.Contains(expected);
     }
 
+    private void TestGenerator(string sourceText, Action<string> generatedTextCheck)
+    {
+        TestGenerator(sourceText, generatedTextCheck, null);
+    }
+
+    private void TestGenerator(string sourceText, string[] expectedDiagnosticCodes)
+    {
+        TestGenerator(sourceText, null, expectedDiagnosticCodes);
+    }
+
     /// <summary>
     /// Tests the <see cref="CustomUnionSourceGenerator"/> correctly generates code the partial union declaration in the sourceText,
     /// and combined with the source text produces a compilation with no errors or warnings.
     /// </summary>
-    private void TestGenerator(string sourceText, Action<string>? generatedTextCheck = null)
+    private void TestGenerator(string markedText, Action<string>? generatedTextCheck = null, string[]? expectedDiagnosticCodes = null)
     {
-        var compilation = CreateCompilation(sourceText);
+        var (unmarkedText, markedRanges) = GetMarkedRanges(markedText);
+
+        var compilation = CreateCompilation(unmarkedText);
         var trees = compilation.SyntaxTrees.ToArray();
 
         var generator = new CustomUnionSourceGenerator();
         var parseOptions = trees[0].Options as CSharpParseOptions;
         var driver = CSharpGeneratorDriver.Create([generator.AsSourceGenerator()], parseOptions: parseOptions);
         var result = driver.RunGeneratorsAndUpdateCompilation(compilation, out var newCompilation, out var diagnostics).GetRunResult();
+       
+        var actualDiagnostics = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error || d.Severity == DiagnosticSeverity.Warning).ToArray();
 
-        Assert.IsTrue(result.GeneratedTrees.Length > 0, "no new files were generated");
-        var newText = result.GeneratedTrees[0].ToString();
+        if (expectedDiagnosticCodes != null && markedRanges.Length != expectedDiagnosticCodes?.Length)
+        {
+            Assert.Fail($"there were {expectedDiagnosticCodes?.Length} expected diagnostics, but only {markedRanges.Length} marked ranges in source text for the test.");
+        }
+        else if (actualDiagnostics.Length != markedRanges.Length)
+        {
+            Assert.Fail($"expected {markedRanges.Length} diagnostics, but got {actualDiagnostics.Length}");
+        }
+        else if (actualDiagnostics.Length > 0)
+        {
+            for (int i = 0; i < actualDiagnostics.Length; i++)
+            {
+                var actual = actualDiagnostics[i];
 
-        var newDiagnostics = newCompilation.GetDiagnostics().Where(
-            d => d.Severity == DiagnosticSeverity.Error
-                || d.Severity == DiagnosticSeverity.Warning).ToImmutableArray();
-        AssertNoDiagnostics(newDiagnostics, newText);
+                if (expectedDiagnosticCodes != null && actual.Id != expectedDiagnosticCodes![i])
+                {
+                    Assert.Fail($"diagnostic {i} was expected to have code {expectedDiagnosticCodes[i]}, but was {actual.Id}");
+                }
 
-        generatedTextCheck?.Invoke(newText);
+                var expectedRange = markedRanges[i];
+                var actualRange = actual.Location.SourceSpan;
+
+                if (actualRange.Start != expectedRange.start || actualRange.Length != expectedRange.length)
+                {
+                    Assert.Fail($"diagnostic {i} was expected at {expectedRange.start}:{expectedRange.length}, but was at {actualRange.Start}:{actualRange.Length}");
+                }
+            }
+        }
+        else 
+        {
+            if (result.GeneratedTrees.Length != 1)
+            {
+                Assert.Fail($"expected 1 generated tree, but got {result.GeneratedTrees.Length}");
+            }
+
+            var newText = result.GeneratedTrees[0].GetText().ToString();
+            generatedTextCheck?.Invoke(newText);
+        }
     }
+
+
+    private static (string unmarkedText, (int start, int length)[] markedRanges) GetMarkedRanges(string text, string rangeStart = "<<", string rangeEnd = ">>")
+    {
+        var markedRanges = new List<(int start, int length)>();
+        var unmarkedText = new System.Text.StringBuilder();
+
+        // gather all the marked ranges and build the unmarked text by removing the markers.
+        var pos = 0;               
+        var delta = 0; // keep track of delta to adjust to positions in the unmarked text
+        while (true)
+        {
+            int openStart = text.IndexOf(rangeStart, pos);
+            int closeStart = openStart > pos ? text.IndexOf(rangeEnd, openStart + rangeStart.Length) : -1;
+            if (openStart > pos && closeStart > openStart)
+            {
+                // append everything before the marked range to the unmarked text
+                unmarkedText.Append(text.Substring(pos, openStart - pos));
+
+                // append everything between the start and end of the marked range to the unmarked text
+                unmarkedText.Append(text.Substring(openStart + rangeStart.Length, closeStart - (openStart + rangeStart.Length)));
+
+                // add range to list of marked ranges
+                markedRanges.Add((openStart - delta, closeStart - (openStart + rangeStart.Length)));
+
+                // account for the length of the start and end markers, so the ranges match the unmarked text.
+                delta += rangeStart.Length + rangeEnd.Length;
+
+                // advance position to after the end of the marked range
+                pos = closeStart + rangeEnd.Length;
+                continue;
+            }
+            else
+            {
+                // append rest of text after last marked range
+                unmarkedText.Append(text.Substring(pos));
+                break;
+            }
+        }
+
+        return (unmarkedText.ToString(), markedRanges.ToArray());
+    }
+
 
 #if false
 

@@ -7,8 +7,9 @@ namespace UnionTypes.Toolkit.Generators
 
 #nullable enable
 
-    public class FatUnionsGenerator : Generator
+    public class FatUnionsGenerator
     {
+        private readonly CodeWriter _writer = new CodeWriter();
         private readonly string _baseTypeName;
         private readonly int _maxTypeArgs;
         private readonly string _namespaceName;
@@ -24,20 +25,20 @@ namespace UnionTypes.Toolkit.Generators
         {
             var generator = new FatUnionsGenerator(baseTypeName, namespaceName, maxTypeArgs);
             generator.WriteFile();
-            return generator.GeneratedText;
+            return generator._writer.WrittenText;
         }
 
         private void WriteFile()
         {
-            WriteLine("using System;");
-            WriteLine("using System.Collections.Generic;");
-            WriteLine("using System.Diagnostics.CodeAnalysis;");
-            WriteLine("#nullable enable");
-            WriteLine();
+            _writer.WriteLine("using System;");
+            _writer.WriteLine("using System.Collections.Generic;");
+            _writer.WriteLine("using System.Diagnostics.CodeAnalysis;");
+            _writer.WriteLine("#nullable enable");
+            _writer.WriteLine();
             if (!string.IsNullOrEmpty(_namespaceName))
             {
-                WriteLine($"namespace {_namespaceName}");
-                WriteBraceNested(() =>
+                _writer.WriteLine($"namespace {_namespaceName}");
+                _writer.WriteBraceNested(() =>
                 {
                     WriteStandardUnionTypes();
                 });
@@ -54,7 +55,7 @@ namespace UnionTypes.Toolkit.Generators
             {
                 WriteStandardUnionType(nTypeArgs);
                 if (nTypeArgs < _maxTypeArgs)
-                    WriteLine();
+                    _writer.WriteLine();
             }
         }
 
@@ -68,75 +69,75 @@ namespace UnionTypes.Toolkit.Generators
             _typeArgList = string.Join(", ", Enumerable.Range(1, nTypeArgs).Select(n => $"T{n}"));
             _unionType = $"{_baseTypeName}<{_typeArgList}>";
 
-            WriteLine($"[System.Runtime.CompilerServices.Union]");
-            WriteLine($"public struct {_unionType}");
-            WriteLineNested($": System.Runtime.CompilerServices.IUnion");
-            WriteBraceNested(() =>
+            _writer.WriteLine($"[System.Runtime.CompilerServices.Union]");
+            _writer.WriteLine($"public struct {_unionType}");
+            _writer.WriteLine($": System.Runtime.CompilerServices.IUnion");
+            _writer.WriteBraceNested(() =>
             {
-                WriteLineSeparatedBlocks(() =>
+                _writer.WriteLineSeparatedBlocks(() =>
                 {
-                    WriteBlock(() =>
+                    _writer.WriteBlock(() =>
                     {
-                       WriteLine("private readonly int _kind;");
+                       _writer.WriteLine("private readonly int _kind;");
                        for (int i = 1; i <= _nTypeArgs; i++)
                        {
-                           WriteLine($"private readonly T{i}? _value{i};");
+                           _writer.WriteLine($"private readonly T{i}? _value{i};");
                        }
                     });
 
-                    WriteBlock(() =>
+                    _writer.WriteBlock(() =>
                     {
                         for (int i = 1; i <= _nTypeArgs; i++)
                         {
-                            WriteLine($"public FatUnion(T{i} value) {{ _value{i} = value; _kind = value != null ? {i} : 0;}}");
+                            _writer.WriteLine($"public FatUnion(T{i} value) {{ _value{i} = value; _kind = value != null ? {i} : 0;}}");
                         }
                     });
 
-                    WriteBlock(() =>
+                    _writer.WriteBlock(() =>
                     {
-                        WriteLine("public bool HasValue => _kind != 0;");
+                        _writer.WriteLine("public bool HasValue => _kind != 0;");
                     });
 
                     for (int i = 1; i <= _nTypeArgs; i++)
                     {
-                        WriteBlock(() =>
+                        _writer.WriteBlock(() =>
                         {
-                            WriteLine($"public bool TryGetValue([NotNullWhen(true)] out T{i}? value)");
-                            WriteBraceNested(() =>
+                            _writer.WriteLine($"public bool TryGetValue([NotNullWhen(true)] out T{i}? value)");
+                            _writer.WriteBraceNested(() =>
                             {
-                                WriteLine($"if (_kind == {i})");
-                                WriteBraceNested(() =>
+                                _writer.WriteLine($"if (_kind == {i})");
+                                _writer.WriteBraceNested(() =>
                                 {
-                                    WriteLine($"value = _value{i};");
-                                    WriteLine("return value != null;");
+                                    _writer.WriteLine($"value = _value{i};");
+                                    _writer.WriteLine("return value != null;");
                                 });
-                                WriteLine("else");
-                                WriteBraceNested(() =>
+                                _writer.WriteLine("else");
+                                _writer.WriteBraceNested(() =>
                                 {
-                                    WriteLine("value = default;");
-                                    WriteLine("return false;");
+                                    _writer.WriteLine("value = default;");
+                                    _writer.WriteLine("return false;");
                                 });
                             });
                         });
                     }
 
-                    WriteBlock(() =>
+                    _writer.WriteBlock(() =>
                     {
-                        WriteLine("public object? Value =>");
-                        WriteNested(() =>
+                        _writer.WriteLine("public object? Value =>");
+                        _writer.WriteNested(() =>
                         {
-                            WriteLine("_kind switch");
-                            WriteBraceNested(() =>
+                            _writer.WriteLine("_kind switch");
+                            _writer.WriteBraceNested(() =>
                             {
                                 for (int i = 1; i <= _nTypeArgs; i++)
                                 {
-                                    WriteLine($"{i} => _value{i},");
+                                    _writer.WriteLine($"{i} => _value{i},");
                                 }
 
-                                WriteLine($"_ => null");
+                                _writer.WriteLine($"_ => null");
                             });
                         });
-                        WriteLine(";");
+                        _writer.WriteLine(";");
                     });
                 });
             });

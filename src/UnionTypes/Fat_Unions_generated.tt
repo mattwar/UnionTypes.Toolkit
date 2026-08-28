@@ -4,7 +4,7 @@
 <#@ import namespace="System.Text" #>
 <#@ import namespace="System.Collections.Generic" #>
 <#@ output extension=".cs" #>
-<#@ include file="..\Generators\Generator.cs" #>
+<#@ include file="..\Generators\CodeWriter.cs" #>
 <#@ include file="..\Generators\FatUnionsGenerator.cs" #>
 <#= FatUnionsGenerator.Generate("FatUnion", "UnionTypes.Toolkit", 9) #>
 

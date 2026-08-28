@@ -240,54 +240,66 @@ namespace UnionTypes.Toolkit.Generators
         {
             // find all "Case" methods that are private static void and have at least one parameter
             // use these to determine the set of case from the parameter types.
-            var casesMethods = unionType.GetMembers()
+            var caseMethod = 
+                unionType.GetMembers()
                 .OfType<IMethodSymbol>()
-                .Where(m => (m.Name == "Cases" || m.Name == "Case")
+                .FirstOrDefault(m => m.Name == "Cases"
                          && m.DeclaredAccessibility == Accessibility.Private
                          && m.TypeParameters.Length == 0
                          && m.ReturnType != null && m.ReturnType.SpecialType == SpecialType.System_Void
-                         && m.Parameters.Length > 0)
-                .ToList();
+                         && m.Parameters.Length > 0);
 
             var caseTypes = new List<ITypeSymbol>();
             var caseParams = new List<IParameterSymbol>();
 
-            foreach (var cm in casesMethods)
+            if (caseMethod != null)
             {
-                foreach (var pm in cm.Parameters)
+                foreach (var pm in caseMethod.Parameters)
                 {
                     caseTypes.Add(pm.Type);
                     caseParams.Add(pm);
                 }
-            }
 
-            for (int i = 0; i < caseTypes.Count; i++)
-            {
-                var caseType = caseTypes[i];
-                var declaringNode = caseParams[i].DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
-                var caseDesc = GetCaseDesc(caseTypes, i, declaringNode);
-                cases.Add(caseDesc);
+                for (int i = 0; i < caseTypes.Count; i++)
+                {
+                    var caseType = caseTypes[i];
+                    var declaringNode = caseParams[i].DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax()!;
+                    var caseDesc = GetCaseDesc(caseTypes, i, diagnostics, declaringNode);
+                    cases.Add(caseDesc);
+                }
             }
         }
      
         /// <summary>
         /// Builds a <see cref="CaseDesc"/> for the case type at the given index in the list of case types.
         /// </summary>
-        private CaseDesc GetCaseDesc(IReadOnlyList<ITypeSymbol> caseTypes, int caseIndex, SyntaxNode? declarationNode = null)
+        private CaseDesc GetCaseDesc(IReadOnlyList<ITypeSymbol> caseTypes, int caseIndex, List<Diagnostic> diagnostics, SyntaxNode caseDeclaration)
         {
             var type = caseTypes[caseIndex];
             var nnType = type.GetNonNullableType();
+            ReportUnsupportedCaseTypes(nnType, diagnostics, caseDeclaration);
+
             var typeName = GetTypeFullName(type);
             var kind = GetTypeDescKind(nnType);
-            var storageCap = GetStorageCapable(nnType);
-            var members = GetDecomposibleMembers(nnType);
-            var typeDesc = new TypeDesc(typeName, kind, storageCap, members);
+
+            var storageKind = GetStorageKind(nnType, diagnostics, caseDeclaration, useOverride: true);
+
+            var members = 
+                (storageKind == StorageKind.Decompose 
+                    || (storageKind == StorageKind.Overlap && IsTrustedDecomposableType(nnType)))
+                    ? GetDecomposibleMembers(nnType, diagnostics, caseDeclaration)
+                    : Array.Empty<MemberDesc>();
+
+            var typeDesc = new TypeDesc(typeName, kind, storageKind, members);
+
+            // determine which other cases are not truly disjoin from this one
             var nonDisjointCases = Enumerable.Range(0, caseTypes.Count)
                 .Where(i => i != caseIndex && !AreDisjoint(type, caseTypes[i]))
                 .ToList();
+
             var accessibility = GetMemberAccessibilityForType(type);
-            var storageOverride = GetStorageOverride(nnType, declarationNode);
-            return new CaseDesc(typeDesc, nonDisjointCases, accessibility, storageOverride);
+
+            return new CaseDesc(typeDesc, nonDisjointCases, accessibility);
         }
 
         /// <summary>
@@ -432,62 +444,119 @@ namespace UnionTypes.Toolkit.Generators
             return false;
         }
 
-        private IReadOnlyList<MemberDesc> GetDecomposibleMembers(ITypeSymbol type)
+        private IReadOnlyList<MemberDesc> GetDecomposibleMembers(ITypeSymbol type, List<Diagnostic> diagnostics, SyntaxNode caseDeclaration)
         {
             if (type.IsValueType
                 && type is INamedTypeSymbol nt)
             {
-                if (type.IsRecord)
+                if (type.IsTupleType)
                 {
-                    var members = new List<MemberDesc>();
-
-                    // break down record into members based on primary constructor..
-                    // For records, the names of the parameters are the same as the names of the properties.
-                    var primaryConstructor = nt.Constructors.FirstOrDefault(c => c.Parameters.Length > 0);
-                    if (primaryConstructor != null && primaryConstructor.Parameters.Length > 0)
-                    {
-                        members.AddRange(primaryConstructor.Parameters.Select(p => CreateCaseMember(p.Name, p.Type, isParameter: true)));
-                    }
-
-                    // if no primary constructor, use public settable properties as members
-                    var propertyMembers = nt.GetMembers()
-                        .OfType<IPropertySymbol>()
-                        .Where(p => p.DeclaredAccessibility == Accessibility.Public
-                            && !p.IsStatic
-                            && p.GetMethod != null
-                            && p.SetMethod != null)
-                        .Select(p => CreateCaseMember(p.Name, p.Type, isParameter: false))
-                        .ToArray();       
-
-                    // add all assignable/initable property members that are not accounted for by the primary constructor parameters
-                    members.AddRange(propertyMembers.Where(pm => !members.Any(m => m.Name == pm.Name)));                
-
-                    return members;
-                }
-                else if (type.IsTupleType)
-                {
+                    // for tuples all members are in the constructor
                     var constructor = nt.Constructors.FirstOrDefault(c => c.Parameters.Length > 0);
                     if (constructor != null)
                     {
-                        return constructor.Parameters.Select(p => CreateCaseMember(GetTuplePropertyName(p), p.Type, isParameter: true)).ToArray();
+                        return constructor.Parameters.Select(p => CreateCaseMember(GetTuplePropertyName(p), p.Type, isParameter: true, diagnostics, caseDeclaration)).ToArray();
                     }
+                }
+                else if (!IsPrimitiveStruct(type))
+                {
+                    var members = new List<MemberDesc>();
+
+                    // break down record into members based on primary constructor
+                    // For records, the names of the parameters are the same as the names of the properties.
+                    var primaryConstructor = nt.GetRecordPrimaryConstructor();
+                    if (primaryConstructor != null)
+                    {
+                        members.AddRange(primaryConstructor.Parameters.Select(p => CreateCaseMember(p.Name, p.Type, isParameter: true, diagnostics, caseDeclaration)));
+                    }
+                    else
+                    {
+                        var defaultConstructor = nt.Constructors.FirstOrDefault(c => c.Parameters.Length == 0);
+
+                        // no default constructor, so look for
+                        // find first non-default constructor that has a matching constructor
+                        var matchingConstructorAndDeconstructors = nt.GetMembers().OfType<IMethodSymbol>()
+                            .Where(m => 
+                                m.MethodKind == MethodKind.Constructor 
+                                && m.Parameters.Length > 0)
+                            .Select(m =>
+                                (Constructor: m, Deconstructor: nt.GetMembers().OfType<IMethodSymbol>().FirstOrDefault(d => 
+                                    d.Name == "Deconstruct" 
+                                    && d.Parameters.Select(dp => dp.Type).SequenceEqual(m.Parameters.Select(mp => mp.Type), SymbolEqualityComparer.Default)
+                                    )))
+                            .Where(pair => pair.Deconstructor != null);
+
+                        var bestMatchingPair = MaxBy(matchingConstructorAndDeconstructors, x => x.Constructor.Parameters.Length);
+                        if (bestMatchingPair != default)
+                        {
+                            // we have a constructor/destructor pair
+                            members.AddRange(bestMatchingPair.Constructor.Parameters.Select(p => CreateCaseMember(p.Name, p.Type, isParameter: true, diagnostics, caseDeclaration)));
+                        }
+                        else if (defaultConstructor == null && !type.IsValueType)
+                        {
+                            // if there is no default constructor, then we cannot decompose this type.
+                            ReportNonDecomposableCase(type, diagnostics, caseDeclaration);
+                            return Array.Empty<MemberDesc>();
+                        }
+                    }
+
+                    // use public fields and properties as additional decomposable members
+                    var fieldOrPropertyMembers = nt.GetMembers()
+                        .Where(m => 
+                            !m.IsStatic 
+                            && m.DeclaredAccessibility == Accessibility.Public
+                            && !members.Any(mem => mem.Name == m.Name) // exclude members already accounted for in primary constructor
+                            && (m is IFieldSymbol
+                                || (m is IPropertySymbol p && p.GetMethod != null && p.SetMethod != null)))
+                        .ToArray();
+
+                    members.AddRange(
+                        fieldOrPropertyMembers.Select(m => 
+                        CreateCaseMember(
+                            m.Name, 
+                            m is IFieldSymbol f ? f.Type : ((IPropertySymbol)m).Type, 
+                            isParameter: false, 
+                            diagnostics, 
+                            caseDeclaration
+                            )));
+
+                    return members;
                 }
             }
 
             return Array.Empty<MemberDesc>();
         }
 
+        private static T? MaxBy<T, TKey>(IEnumerable<T> source, Func<T, TKey> selector)
+            where TKey : IComparable<TKey>
+        {
+            T? max = default;
+            TKey? maxKey = default;
+
+            foreach (var item in source)
+            {
+                var key = selector(item);
+                if (maxKey == null || key.CompareTo(maxKey) > 0)
+                {
+                    max = item;
+                    maxKey = key;
+                }
+            }
+
+            return max;
+        }
+
        /// <summary>
         /// Gets a deconstructable member of a case type from a parameter symbol,
         /// typically from the constructor of the type (record)
         /// </summary>
-        private MemberDesc CreateCaseMember(string name, ITypeSymbol type, bool isParameter)
+        private MemberDesc CreateCaseMember(string name, ITypeSymbol type, bool isParameter, List<Diagnostic> diagnostics, SyntaxNode caseDeclaration)
         {
             var kind = GetTypeDescKind(type);
             var typeName = GetTypeFullName(type);
-            var storageCap = GetStorageCapable(type);
-            var nestedMembers = GetDecomposibleMembers(type);            
-            var typeDesc = new TypeDesc(typeName, kind, storageCap, nestedMembers);
+            var storageKind = GetStorageKind(type, diagnostics, caseDeclaration, useOverride: false);
+            var nestedMembers = GetDecomposibleMembers(type, diagnostics, caseDeclaration);
+            var typeDesc = new TypeDesc(typeName, kind, storageKind, nestedMembers);
             var memberDesc = new MemberDesc(name, typeDesc, isParameter);
             return memberDesc;
         }
@@ -504,21 +573,28 @@ namespace UnionTypes.Toolkit.Generators
             }
         }
 
-        private static StorageOverride GetStorageOverride(ITypeSymbol type, SyntaxNode? declarationNode = null)
+        private static StorageKind GetStorageOverride(ITypeSymbol type, SyntaxNode caseDeclaration)
         {
-            if (declarationNode != null)
+            if (ContainsInTrivia(caseDeclaration, "box"))
             {
-                if (ContainsInTrivia(declarationNode, "box"))
-                    return StorageOverride.Box;
-                else if (ContainsInTrivia(declarationNode, "decompose"))
-                    return StorageOverride.Decompose;
-                else if (ContainsInTrivia(declarationNode, "isolate"))
-                    return StorageOverride.Isolate;
-                else if (ContainsInTrivia(declarationNode, "overlap"))
-                    return StorageOverride.Overlap;
+                return StorageKind.Box;               
             }
-
-            return StorageOverride.None;
+            else if (ContainsInTrivia(caseDeclaration, "decompose"))
+            {
+                return StorageKind.Decompose;
+            }
+            else if (ContainsInTrivia(caseDeclaration, "isolate"))
+            {
+                return StorageKind.Isolate;               
+            }
+            else if (ContainsInTrivia(caseDeclaration, "overlap"))
+            {
+                return StorageKind.Overlap;                
+            }
+            else
+            {
+                return StorageKind.None;           
+            }
         }
 
         private static StorageCapable GetStorageCapable(ITypeSymbol type)
@@ -537,37 +613,28 @@ namespace UnionTypes.Toolkit.Generators
                     }
                     else if (type.IsTupleType)
                     {
-                        // trust value tuples to not have hidden metadata
-                        if (IsOverlappableStruct(type))
+                        if (IsTrustedOverlappableType(type))
                         {
-                            return StorageCapable.Boxable | StorageCapable.Overlappable | StorageCapable.Decomposable;
+                            return StorageCapable.Boxable | StorageCapable.Decomposable | StorageCapable.Overlappable;
                         }
                         else
                         {
                             return StorageCapable.Boxable | StorageCapable.Decomposable;
                         }
                     }
-                    else if (type.IsRecord)
-                    {
-                        var isDecomposable = IsDecomposableStruct(type);
-                        var isOverlappable = IsOverlappableStruct(type);
-                        
-                        return StorageCapable.Boxable
-                            | (isOverlappable ? StorageCapable.Overlappable : StorageCapable.None)
-                            | (isDecomposable ? StorageCapable.Decomposable : StorageCapable.None);
-                    }
                     else if (type.IsRefLikeType)
                     {
                         // cannot be boxed, decomposed or overlapped
                         return StorageCapable.None;
                     }
-                    else if (IsOverlappableStruct(type))
-                    {
-                        return StorageCapable.Boxable | StorageCapable.Overlappable;
-                    }
                     else
                     {
-                        return StorageCapable.Boxable;
+                        var isDecomposable = IsTrustedDecomposableType(type);
+                        var isOverlappable = IsTrustedOverlappableType(type);
+                        
+                        return StorageCapable.Boxable
+                            | (isOverlappable ? StorageCapable.Overlappable : StorageCapable.None)
+                            | (isDecomposable ? StorageCapable.Decomposable : StorageCapable.None);
                     }
                 case CATypeKind.Interface:
                 case CATypeKind.Class:
@@ -582,6 +649,74 @@ namespace UnionTypes.Toolkit.Generators
             }           
         }
 
+        /// <summary>
+        /// Determines the <see cref="StorageKind"/> to use for this type.
+        /// Reports errors for invalid override annotations.
+        /// </summary>
+        private static StorageKind GetStorageKind(ITypeSymbol type, List<Diagnostic> diagnostics, SyntaxNode caseDeclaration, bool useOverride)
+        {
+            var storageCap = GetStorageCapable(type);
+            var storageOverride = useOverride ? GetStorageOverride(type, caseDeclaration) : StorageKind.None;
+
+            // storage annotations can override the default storage kind when it is trusted or untrusted, but not when impossible
+            switch (storageOverride)
+            {
+                case StorageKind.Box:
+                    if (!storageCap.HasFlag(StorageCapable.Boxable))
+                    {
+                        ReportNonBoxableCase(type, diagnostics, caseDeclaration);
+                        return StorageKind.Isolate;
+                    }
+                    return StorageKind.Box;
+                case StorageKind.Decompose:
+                    if (!storageCap.HasFlag(StorageCapable.Decomposable) 
+                        && GetDecomposableTrust(type) == TrustLevel.NotPossible)
+                    {
+                        ReportNonDecomposableCase(type, diagnostics, caseDeclaration);
+                        return StorageKind.Isolate;
+                    }
+                    // otherwise, annotation == trust me bro
+                    return StorageKind.Decompose;
+                case StorageKind.Isolate:
+                    if (type.IsReferenceType)
+                    {
+                        // don't isolate, use box instead
+                        return StorageKind.Box;
+                    }
+                    return StorageKind.Isolate;
+                case StorageKind.Overlap:
+                    if (!storageCap.HasFlag(StorageCapable.Overlappable)
+                        && GetOverlappableTrust(type) == TrustLevel.NotPossible)
+                    {
+                        ReportNonOverlappableCase(type, diagnostics, caseDeclaration);
+                        return StorageKind.Isolate;
+                    }
+                    return StorageKind.Overlap;
+                case StorageKind.None:
+                default:
+                    if (storageCap.HasFlag(StorageCapable.Overlappable))
+                    {
+                        return StorageKind.Overlap;
+                    }
+                    else if (storageCap.HasFlag(StorageCapable.Decomposable))
+                    {
+                        return StorageKind.Decompose;
+                    }
+                    else if (type.IsReferenceType)
+                    {
+                        return StorageKind.Box;
+                    }
+                    else
+                    {
+                        return StorageKind.Isolate;
+                    }
+            }
+        }
+
+
+        /// <summary>
+        /// Gets the <see cref="TypeDescKind"/> for the type.
+        /// </summary>
         private static TypeDescKind GetTypeDescKind(ITypeSymbol type)
         {
             switch (type.TypeKind)
@@ -621,62 +756,186 @@ namespace UnionTypes.Toolkit.Generators
             }
         }
 
-        private static bool IsOverlappableType(ITypeSymbol type)
+        private enum TrustLevel
         {
-            if (type.IsNullable())
-                return IsOverlappableType(type.GetNonNullableType());
-
-            switch (type.TypeKind)
-            {
-                case CATypeKind.Enum:
-                    return true;
-                case CATypeKind.Struct:
-                    return IsPrimitiveStruct(type)
-                        || IsOverlappableStruct(type);
-                default:
-                    return false;
-            }
-        }
-
-        private static bool IsOverlappableStruct(ITypeSymbol type)
-        {
-            if (!type.IsValueType)
-                return false;
-
-            if (type.IsNullable())
-                return IsOverlappableStruct(type.GetNonNullableType());
-
-            // must be declared in source to be certain that all fields are actaully represented in the metadata
-            if (type.IsDeclaredInSource()
-                && type.GetMembers().OfType<IFieldSymbol>().All(f => IsOverlappableType(f.Type)))
-            {
-                return true;            
-            }
-
-            return false;
+            Trusted,
+            NotTrusted,
+            NotPossible
         }
 
         /// <summary>
-        /// True if thie type can be reduced to its properties and reconstructed again from them.
-        /// This applies to tuples and records that have only public settable propereties or constructor/destructors.
+        /// True if the type is trusted to be overlapped with other overlappable types.
         /// </summary>
-        private static bool IsDecomposableStruct(ITypeSymbol type)
+        private static bool IsTrustedOverlappableType(ITypeSymbol type)
         {
-            if (type.IsValueType && (type.IsRecord || type.IsTupleType))
-            {               
-                // most records and tuples are decomposable.               
+            return GetOverlappableTrust(type) == TrustLevel.Trusted;
+        }
 
-                // TODO: check for primary constructor
+        /// <summary>
+        /// Gets the overlap trust level for the given type.
+        /// </summary>
+        private static TrustLevel GetOverlappableTrust(ITypeSymbol type)
+        {
+            if (!type.IsValueType)
+                return TrustLevel.NotPossible;
 
-                // check that all properties are either associated with the primary constructor or are settable.
-                return type.GetMembers()
-                    .OfType<IPropertySymbol>()
-                    .Where(p => p.DeclaredAccessibility == Accessibility.Public && !p.IsStatic)
-                    .All(p => p.GetMethod != null && p.SetMethod != null);
+                if (type.TypeKind == CATypeKind.Enum
+                    || IsPrimitiveStruct(type))
+                {
+                    return TrustLevel.Trusted;
+                }
+
+            if (type.IsNullable())
+                return GetOverlappableTrust(type.GetNonNullableType());
+
+            // must be declared in source to be certain that all fields are actually represented in the metadata
+            if (type.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic).Any(f => !IsTrustedOverlappableType(f.Type)))
+            {
+                return TrustLevel.NotPossible;            
+            }
+
+            return TrustLevel.Trusted;
+        }
+
+        /// <summary>
+        /// Returns true if the type is a struct that is trusted to be decomposable into its public fields and properties.
+        /// </summary>
+        private static bool IsTrustedDecomposableType(ITypeSymbol type)
+        {
+            return GetDecomposableTrust(type) == TrustLevel.Trusted;
+        }
+
+        /// <summary>
+        /// Gets the decomposable trust level for the given type.
+        /// </summary>
+        private static TrustLevel GetDecomposableTrust(ITypeSymbol type)
+        {
+            // tuples are always trusted decomposable
+            if (type.IsValueType 
+                && type.IsTupleType)
+                return TrustLevel.NotPossible;
+
+            // primitives cannot be decomposed
+            if (IsPrimitiveStruct(type))
+                return TrustLevel.NotPossible;
+
+            // trust only records with simple primary constructors and/or all public settable properties declared in source.
+            if (type.IsValueType
+                && type is INamedTypeSymbol nt)
+            {
+                var constructors = type.GetMembers().OfType<IMethodSymbol>().Where(m => m.MethodKind == MethodKind.Constructor).ToList();
+                var hasDefaultConstructor = constructors.Count == 0 || constructors.Any(m => m.MethodKind == MethodKind.Constructor && m.Parameters.Length == 0);
+
+                if (type.IsRecord)
+                {
+                    // if record than trust that primary constructor parameters are associated with properties.
+                    // otherwise requires that all public properties and fields are settable.
+                    return HasOnlyPublicSettableMembers(type) 
+                        ? TrustLevel.Trusted 
+                        : TrustLevel.NotTrusted;
+                }
+                else
+                {
+                    if (!hasDefaultConstructor)
+                        return TrustLevel.NotPossible;
+                    return HasOnlyPublicSettableMembers(type) 
+                        ? TrustLevel.Trusted 
+                        : TrustLevel.NotTrusted;
+                }
+            }
+
+            return TrustLevel.NotPossible;
+        }
+
+        /// <summary>
+        /// Returns true if the type has only public fields and properties that have a set method (or init method).
+        /// </summary>
+        private static bool HasOnlyPublicSettableMembers(ITypeSymbol type)
+        {
+            foreach (var member in type.GetMembers())
+            {
+                if (member is IFieldSymbol field)
+                {
+                    // static fields are not part of the decomposition, so ignore them
+                    // auto-properties have implicitly declared fields, so ignore them
+                    if (field.IsStatic
+                        || field.IsImplicitlyDeclared)
+                        continue;
+                    if (field.DeclaredAccessibility != Accessibility.Public)
+                        return false;
+                }
+                else if (member is IPropertySymbol prop)    
+                {
+                    // static properties are not part of the decomposition, so ignore them
+                    if (prop.IsStatic)
+                        continue;
+                    // properties must be public and settable
+                    if (prop.DeclaredAccessibility != Accessibility.Public || prop.SetMethod == null)
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+#if false
+        private static bool IsSimpleSourceRecordStruct(ITypeSymbol type)
+        {
+            if (type.IsValueType
+                && type.IsRecord 
+                && type.IsDeclaredInSource())  // if its not in source, we don't know what shenanigans the author has done to the type.
+            {
+                // check that all property and field declarations are approved
+                foreach (var syntaxRef in type.DeclaringSyntaxReferences)
+                {
+                    if (syntaxRef.GetSyntax() is RecordDeclarationSyntax recordDecl)
+                    {
+                        // all members must be public settable/initable auto properties or fields
+                        foreach (var member in recordDecl.Members)
+                        {
+                            if (member is PropertyDeclarationSyntax propDecl)
+                            {
+                                // static properties are okay because they are not part of the decomposition
+                                if (propDecl.Modifiers.Any( m => m.IsKind(SyntaxKind.StaticKeyword)))
+                                    continue;
+                                // only public declared properties are allowed to be part of the decomposition.
+                                if (!propDecl.Modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword)))
+                                    return false;
+                                // must have a set or init accessor
+                                if (propDecl.AccessorList == null
+                                    || !propDecl.AccessorList.Accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration) || a.IsKind(SyntaxKind.InitAccessorDeclaration)))
+                                    return false;
+                                // must be an auto-property
+                                return propDecl.AccessorList.Accessors.All(a => a.Body == null && a.ExpressionBody == null);
+                            }
+                            else if (member is FieldDeclarationSyntax fieldDecl)
+                            {
+                                // static fields are okay since they are not part of the decomposition.
+                                if (fieldDecl.Modifiers.Any( m => m.IsKind(SyntaxKind.StaticKeyword)))
+                                    continue;
+                                // must be a public declared field to be part of the decomposition.
+                                if (!fieldDecl.Modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword)))
+                                    return false;
+                                // if there are any non-public fields, then this is not a trusted decomposable record.
+                                return false;
+                            }
+                            else
+                            {
+                                return false;
+                            }
+                        }
+                    }                   
+                    else
+                    {
+                        // not a record declaration syntax?
+                        return false;
+                    }
+                }
             }
 
             return false;
         }
+#endif        
 
         private static bool IsPrimitiveStruct(ITypeSymbol type)
         {
@@ -854,18 +1113,6 @@ namespace UnionTypes.Toolkit.Generators
             return ns.Name;
         }
 
-        private static DiagnosticDescriptor DuplicateCaseNameDiagnostic = new DiagnosticDescriptor(
-#pragma warning disable RS2008 // Enable analyzer release tracking
-            "UT0001",
-#pragma warning restore RS2008 // Enable analyzer release tracking
-            "Duplicate case name",
-            "Case name '{0}' is already used in the union type",
-            "UnionTypes",
-            DiagnosticSeverity.Error,
-            true
-            );
-
-
         private static bool ContainsInTrivia(ISymbol symbol, string text)
         {
             return GetDeclarationNodes(symbol).Any(d => ContainsInTrivia(d, text));
@@ -966,6 +1213,113 @@ namespace UnionTypes.Toolkit.Generators
                         yield return declaration;
                 }
             }
+        }
+
+        private static void ReportUnsupportedCaseTypes(ITypeSymbol type, List<Diagnostic> diagnostics, SyntaxNode? caseDeclaration)
+        {
+            var typeKind = GetTypeDescKind(type);
+            if (typeKind == TypeDescKind.Unknown
+                || typeKind == TypeDescKind.RefStruct)
+            {
+                var location = caseDeclaration?.GetLocation() ?? type.Locations.FirstOrDefault();
+                diagnostics.Add(Diagnostic.Create(UnsupportedCaseTypeDiagnostic, location, type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+            }
+            else
+            {
+                // check if the type contains any unsupported member types, and report diagnostics for those as well.
+                foreach (var field in type.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic))
+                {
+                    ReportUnsupportedCaseTypes(field.Type, diagnostics, caseDeclaration);
+                }               
+            }
+        }
+
+        private static void ReportNonOverlappableCase(ITypeSymbol type, List<Diagnostic> diagnostics, SyntaxNode? caseDeclaration)
+        {
+            var location = caseDeclaration?.GetLocation() ?? type.Locations.FirstOrDefault();
+            diagnostics.Add(Diagnostic.Create(NonOverlappableCaseDiagnostic, location, type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+        }
+
+        private static void ReportNonDecomposableCase(ITypeSymbol type, List<Diagnostic> diagnostics, SyntaxNode? caseDeclaration)
+        {
+            var location = caseDeclaration?.GetLocation() ?? type.Locations.FirstOrDefault();
+            diagnostics.Add(Diagnostic.Create(NonDecomposableCaseDiagnostic, location, type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+        }
+
+        private static void ReportNonBoxableCase(ITypeSymbol type, List<Diagnostic> diagnostics, SyntaxNode? caseDeclaration)
+        {
+            var location = caseDeclaration?.GetLocation() ?? type.Locations.FirstOrDefault();
+            diagnostics.Add(Diagnostic.Create(NonBoxableCaseDiagnostic, location, type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+        }
+
+        private static DiagnosticDescriptor UnsupportedCaseTypeDiagnostic = new DiagnosticDescriptor(
+#pragma warning disable RS2008 // Enable analyzer release tracking
+            "UT0001",
+#pragma warning restore RS2008 // Enable analyzer release tracking
+            "Unsupported case type",
+            "The union contains the unsupported type '{0}'. Only primitive types, structs, records, tuples, classes, interfaces and arrays are supported in unions.",
+            "UnionTypes",
+            DiagnosticSeverity.Error,
+            true
+            );
+
+        private static DiagnosticDescriptor NonOverlappableCaseDiagnostic = new DiagnosticDescriptor(
+#pragma warning disable RS2008 // Enable analyzer release tracking
+            "UT0002",
+#pragma warning restore RS2008 // Enable analyzer release tracking
+            "Non-overlappable case type",
+            "The case type '{0}' cannot be overlapped with other cases in the union, it will be isolated or decomposed if possible",
+            "UnionTypes",
+            DiagnosticSeverity.Warning,
+            true
+            );
+
+        private static DiagnosticDescriptor NonDecomposableCaseDiagnostic = new DiagnosticDescriptor(
+#pragma warning disable RS2008 // Enable analyzer release tracking
+            "UT0003",
+#pragma warning restore RS2008 // Enable analyzer release tracking
+            "Non-decomposable case type",
+            "The case type '{0}' cannot be decomposed into its member values, it will be isolated into its own field",
+            "UnionTypes",
+            DiagnosticSeverity.Warning,
+            true
+            );
+
+       private static DiagnosticDescriptor NonBoxableCaseDiagnostic = new DiagnosticDescriptor(
+#pragma warning disable RS2008 // Enable analyzer release tracking
+            "UT0004",
+#pragma warning restore RS2008 // Enable analyzer release tracking
+            "Non-boxable case type",
+            "The case type '{0}' cannot be boxed into an object field, it will be isolated into a field of its own type",
+            "UnionTypes",
+            DiagnosticSeverity.Warning,
+            true
+            );
+
+        [Flags]
+        public enum StorageCapable
+        {
+            // note: all types are isolate capable.
+
+            /// <summary>
+            /// The type has no special storage capabilities (except isolate)
+            /// </summary>
+            None = 0,
+
+            /// <summary>
+            /// The type is boxable (can be stored in a shared object field)
+            /// </summary>
+            Boxable = 1 << 0,
+
+            /// <summary>
+            /// The type is decomposable into its constituent members and stored separately.
+            /// </summary>
+            Decomposable = 1 << 1,
+
+            /// <summary>
+            /// The type is overlappable with other overlappable types
+            /// </summary>
+            Overlappable = 1 << 2,
         }
     }
 }

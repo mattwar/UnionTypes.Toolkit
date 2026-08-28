@@ -81,5 +81,71 @@ namespace UnionTypes.Toolkit.Generators
 
             return type;
         }
+
+        public static IMethodSymbol? GetRecordPrimaryConstructor(this INamedTypeSymbol recordSymbol)
+        {
+            if (!recordSymbol.IsRecord)
+                return null;
+
+            // 1. If declared in source, use DeclaringSyntaxReferences
+            var sourceCtor = recordSymbol.InstanceConstructors
+                .FirstOrDefault(ctor => ctor.DeclaringSyntaxReferences
+                    .Any(r => r.GetSyntax() is TypeDeclarationSyntax));
+
+            if (sourceCtor != null)
+                return sourceCtor;
+
+            // 2. If imported from metadata:
+            // Exclude the compiler-generated copy constructor (takes single parameter of the record type itself)
+            var candidates = recordSymbol.InstanceConstructors
+                .Where(ctor => !IsCopyConstructor(ctor, recordSymbol))
+                .ToList();
+
+            if (candidates.Count == 0)
+                return null;
+
+            if (candidates.Count == 1)
+                return candidates[0];
+
+            // Disambiguate using the compiler-generated Deconstruct method
+            var deconstruct = recordSymbol.GetMembers("Deconstruct")
+                .OfType<IMethodSymbol>()
+                .FirstOrDefault(m => !m.IsStatic);
+
+            if (deconstruct != null)
+            {
+                var match = candidates.FirstOrDefault(ctor =>
+                    ctor.Parameters.Length == deconstruct.Parameters.Length 
+                    && ctor.Parameters
+                        .Zip(deconstruct.Parameters, 
+                            (cp, dp) =>
+                                SymbolEqualityComparer.Default.Equals(cp.Type, dp.Type) &&
+                                string.Equals(cp.Name, dp.Name, StringComparison.OrdinalIgnoreCase))
+                        .All(m => m));
+
+                if (match != null)
+                    return match;
+            }
+
+            // Fallback: match parameter names/types to init-only positional properties
+            var properties = recordSymbol.GetMembers()
+                .OfType<IPropertySymbol>()
+                .Where(p => !p.IsStatic && p.SetMethod != null && p.SetMethod.IsInitOnly)
+                .ToList();
+
+            return candidates.FirstOrDefault(ctor =>
+                ctor.Parameters.Length <= properties.Count 
+                && ctor.Parameters.All(param => 
+                    properties.Any(prop =>
+                        string.Equals(prop.Name, param.Name, StringComparison.OrdinalIgnoreCase)
+                        && SymbolEqualityComparer.Default.Equals(prop.Type, param.Type)
+                        )));
+        }
+
+        private static bool IsCopyConstructor(IMethodSymbol ctor, INamedTypeSymbol recordSymbol)
+        {
+            return ctor.Parameters.Length == 1 &&
+                SymbolEqualityComparer.Default.Equals(ctor.Parameters[0].Type, recordSymbol);
+        }        
     }
 }

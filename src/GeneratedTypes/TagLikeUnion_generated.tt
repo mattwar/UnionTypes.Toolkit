@@ -4,18 +4,18 @@
 <#@ import namespace="System.Text" #>
 <#@ import namespace="System.Collections.Generic" #>
 <#@ output extension=".cs" #>
-<#@ include file="..\Generators\Generator.cs" #>
+<#@ include file="..\Generators\CodeWriter.cs" #>
 <#@ include file="..\Generators\CustomUnionGenerator.cs" #>
 <#= new CustomUnionGenerator().Generate(
     new UnionInfo(
         "TagLikeUnion",
         [
             new CaseDesc(
-                new TypeDesc("Open", TypeDescKind.Struct, [new MemberDesc("Percent", TypeDesc.Float, isParameter: true)]),
+                new TypeDesc("Open", [new MemberDesc("Percent", TypeDesc.Float, isParameter: true)]),
                 generateType: true
                 ),  
             new CaseDesc(
-                new TypeDesc("Closed", TypeDescKind.Struct, [new MemberDesc("Percent", TypeDesc.Float, isParameter: true)]),
+                new TypeDesc("Closed", [new MemberDesc("Percent", TypeDesc.Float, isParameter: true)]),
                 generateType: true
                 ),
         ]
