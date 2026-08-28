@@ -668,9 +668,9 @@ namespace UnionTypes.Toolkit.Generators
             var tagField = new DataField(TagFieldName, TypeDesc.Int32);
             var dataFields = new List<DataField>();
 
-            // if at least two cases have some overlapping then create a field for the overlapped data
+            // if at least two cases have some overlapping members then create a field for the overlapped data
             DataField? overlappedField = null;
-            if (union.Cases.Count(PrefersOverlapping) >= 2)
+            if (union.Cases.Count(c => HasOverlappableMembers(c.Type)) >= 2)
             {
                 overlappedField = new DataField(OverlappedFieldName, new TypeDesc(OverlappedTypeName, TypeDescKind.Struct));
             }
@@ -686,62 +686,33 @@ namespace UnionTypes.Toolkit.Generators
 
                 var caseTag = $"{i + 1}";
 
-                if (caseDesc.StorageOverride == StorageOverride.Isolate)
+                switch (caseDesc.Type.Storage)
                 {
-                    // use a strongly-typed field
-                    caseLayouts.Add(GetIsolatedLayout(caseDesc, caseType, caseTag));
-                }
-                else if (caseDesc.StorageOverride == StorageOverride.Box && caseType.IsBoxable)
-                {
-                    // use a "boxed" object field
-                    caseLayouts.Add(GetBoxedLayout(caseDesc, caseType, caseTag));
-                }
-                else if (caseDesc.StorageOverride == StorageOverride.Overlap && overlappedField != null)
-                {
-                    // overlap the whole case type in the overlapped field
-                    caseLayouts.Add(GetOverlappedLayout(caseDesc, caseType, caseTag));
-                }
-                else if (caseDesc.StorageOverride == StorageOverride.Decompose && caseType.IsDecomposable)
-                {
-                    // decompose the case type into its members and store them overlapped, boxed or isolated as appropriate
-                    caseLayouts.Add(GetDecomposedLayout(caseDesc, caseType, caseTag));
-                }
-                else if (caseType.IsOverlappable && overlappedField != null)
-                {
-                    // overlap the whole case type in the overlapped field
-                    caseLayouts.Add(GetOverlappedLayout(caseDesc, caseType, caseTag));
-                }
-                else if (caseType.IsDecomposable)
-                {
-                    // decompose the case type into its members and store them overlapped, boxed or isolated as appropriate
-                    caseLayouts.Add(GetDecomposedLayout(caseDesc, caseType, caseTag));
-                }
-                else if (caseType.IsReference)
-                {
-                    // use a "boxed" object field for reference types to improve sharing
-                    caseLayouts.Add(GetBoxedLayout(caseDesc, caseType, caseTag));
-                }
-                else
-                {
-                    // otherwise use a strongly-typed field.
-                    // note: do not box struct values automatically (require override)
-                    caseLayouts.Add(GetIsolatedLayout(caseDesc, caseType, caseTag));
-                }
-            }
-
-            // true if the case prefers overlapping in layout
-            bool PrefersOverlapping(CaseDesc caseDesc)
-            {
-                switch (caseDesc.StorageOverride)
-                {
-                    case StorageOverride.Overlap:
-                        return true;
-                    case StorageOverride.Decompose:
-                    case StorageOverride.None:               
-                        return caseDesc.Type.IsOverlappable
-                            || (caseDesc.Type.IsDecomposable && HasOverlappableMembers(caseDesc.Type));
-                    default:
-                        return false;
+                    case StorageKind.Box:
+                        caseLayouts.Add(GetBoxedLayout(caseDesc, caseType, caseTag));
+                        continue;                  
+                    case StorageKind.Decompose:
+                        caseLayouts.Add(GetDecomposedLayout(caseDesc, caseType, caseTag));
+                        continue;
+                    case StorageKind.Isolate:
+                        caseLayouts.Add(GetIsolatedLayout(caseDesc, caseType, caseTag));
+                        continue;
+                    case StorageKind.Overlap:
+                        if (overlappedField != null)
+                        {
+                            caseLayouts.Add(GetOverlappedLayout(caseDesc, caseType, caseTag));                            
+                        }
+                        else if (caseDesc.Type.Members.Count > 0)
+                        {
+                            // cannot overlap if only one case has overlappable elements, so decompose the case instead (if it has members)
+                            caseLayouts.Add(GetDecomposedLayout(caseDesc, caseType, caseTag));
+                        }
+                        else
+                        {
+                            // otherwise isolate
+                            caseLayouts.Add(GetIsolatedLayout(caseDesc, caseType, caseTag));                            
+                        }
+                        break;
                 }
             }
 
@@ -786,30 +757,46 @@ namespace UnionTypes.Toolkit.Generators
 
                 foreach (var member in members)
                 {
-                    if (member.Type.IsOverlappable && overlappedCaseField != null)
+                    switch (member.Type.Storage)
                     {
-                        // if only one member is overlappable then specify field for simplicity
-                        var field = overlappedMemberCount == 1 ? overlappedCaseField : null;
-                        var layout = new MemberLayout(member, field, true, false, null);
-                        memberLayouts.Add(layout);
-                    }
-                    else if (member.Type.IsDecomposable)
-                    {
-                        var nestedLayouts = CreateMemberLayouts(member.Type.Members, overlappedCaseField, overlappedMemberCount);
-                        var layout = new MemberLayout(member, null, false, true, nestedLayouts);
-                        memberLayouts.Add(layout);
-                    }
-                    else if (member.Type.IsReference)
-                    {
-                        var field = GetField(member.Type, allowBoxing: true);
-                        var layout = new MemberLayout(member, field, false, false, null);
-                        memberLayouts.Add(layout);                        
-                    }
-                    else
-                    {
-                        var field = GetField(member.Type, allowBoxing: false);
-                        var layout = new MemberLayout(member, field, false, false, null);
-                        memberLayouts.Add(layout);
+                        case StorageKind.Box:
+                            var field = GetField(member.Type, allowBoxing: true);
+                            var layout = new MemberLayout(member, field, false, false, null);
+                            memberLayouts.Add(layout);                        
+                            break;
+                        case StorageKind.Decompose:
+                            var nestedLayouts = CreateMemberLayouts(member.Type.Members, overlappedCaseField, overlappedMemberCount);
+                            layout = new MemberLayout(member, null, false, true, nestedLayouts);
+                            memberLayouts.Add(layout);
+                            break;
+                        case StorageKind.Isolate:
+                            field = GetField(member.Type, allowBoxing: false);
+                            layout = new MemberLayout(member, field, false, false, null);
+                            memberLayouts.Add(layout);
+                            break;
+                        case StorageKind.Overlap:
+                            if (overlappedCaseField != null)
+                            {
+                                // if only one member of this case is overlappable then specify field for simplicity
+                                field = overlappedMemberCount == 1 ? overlappedCaseField : null;
+                                layout = new MemberLayout(member, field, true, false, null);
+                                memberLayouts.Add(layout);
+                            }
+                            else if (member.Type.Members.Count > 0)
+                            {
+                                // cannot overlap if only one case has overlappable elements, so decompose the member instead
+                                nestedLayouts = CreateMemberLayouts(member.Type.Members, null, 0);
+                                layout = new MemberLayout(member, null, false, true, nestedLayouts);
+                                memberLayouts.Add(layout);
+                            }
+                            else
+                            {
+                                // otherwise, isolate the member
+                                field = GetField(member.Type, allowBoxing: false);
+                                layout = new MemberLayout(member, field, false, false, null);
+                                memberLayouts.Add(layout);
+                            }
+                            break;
                     }
                 }
 
@@ -822,7 +809,7 @@ namespace UnionTypes.Toolkit.Generators
                 if (overlappedMembers.Count == 1)
                     return overlappedMembers[0].Type;
                 var name = $"({string.Join(", ", overlappedMembers.Select(m => m.Type.TypeName))})";
-                return new TypeDesc(name, TypeDescKind.Struct, StorageCapable.Overlappable);
+                return new TypeDesc(name, TypeDescKind.Struct, StorageKind.Overlap);
             }
 
             return new UnionLayout(
@@ -837,14 +824,10 @@ namespace UnionTypes.Toolkit.Generators
             {
                 DataField? field;
 
-                if (type.IsBoxable && allowBoxing)
+                if (allowBoxing)
                 {
                     // use object as type for maximal field sharing
-                    //if (type.IsNullable)
-                        type = TypeDesc.Object.Nullable;
-                    // else
-                    //     type = TypeDesc.Object;
-                    allowBoxing = true;
+                    type = TypeDesc.Object.Nullable;
                 }
 
                 // look for data field of this type not yet used by this case
@@ -879,9 +862,9 @@ namespace UnionTypes.Toolkit.Generators
 
             bool HasOverlappableMembers(TypeDesc td)
             {
-                if (td.IsOverlappable)
+                if (td.Storage == StorageKind.Overlap)
                     return true;
-                if (td.IsDecomposable)
+                if (td.Storage == StorageKind.Decompose)
                     return td.Members.Any(m => HasOverlappableMembers(m.Type));
                 return false;
             }
@@ -896,11 +879,11 @@ namespace UnionTypes.Toolkit.Generators
                 {
                     foreach (var member in members)
                     {
-                        if (member.Type.IsOverlappable)
+                        if (member.Type.Storage == StorageKind.Overlap)
                         {
                             overlapped.Add(member);
                         }
-                        else if (member.Type.IsDecomposable)
+                        else if (member.Type.Storage == StorageKind.Decompose)
                         {
                             Gather(member.Type.Members);
                         }
@@ -1261,33 +1244,25 @@ namespace UnionTypes.Toolkit.Generators
         /// </summary>
         public bool GenerateType { get; }
 
-        /// <summary>
-        /// Any storage override specified for the case.
-        /// </summary>
-        public StorageOverride StorageOverride { get; }
-
         private CaseDesc(
             TypeDesc type,
             IReadOnlyList<int>? nonDisjointCases,
             bool generateType,
-            string accessibility, 
-            StorageOverride storageOverride
-            )
+            string accessibility)
         {
             this.Type = type;
             this.NonDisjointCases = nonDisjointCases ?? Array.Empty<int>();
             this.GenerateType = generateType;
             this.Accessibility = accessibility;
-            this.StorageOverride = storageOverride;
         }
 
         public CaseDesc(TypeDesc type, bool generateType, string accessibility = "public")
-            : this(type, null, generateType, accessibility, StorageOverride.None)
+            : this(type, null, generateType, accessibility)
         {
         }
 
-        public CaseDesc(TypeDesc type, IReadOnlyList<int>? nonDisjointCases = null, string accessibility = "public", StorageOverride storageOverride = StorageOverride.None)
-            : this(type, nonDisjointCases, false, accessibility, storageOverride)
+        public CaseDesc(TypeDesc type, IReadOnlyList<int>? nonDisjointCases = null, string accessibility = "public")
+            : this(type, nonDisjointCases, false, accessibility)
         {
         }
 
@@ -1295,8 +1270,7 @@ namespace UnionTypes.Toolkit.Generators
         {
             if (this.Type.Equals(other.Type)
                 && this.GenerateType == other.GenerateType
-                && this.Accessibility == other.Accessibility
-                && this.StorageOverride == other.StorageOverride)
+                && this.Accessibility == other.Accessibility)
             {
                 if (this.NonDisjointCases.Count != other.NonDisjointCases.Count)
                     return false;
@@ -1319,6 +1293,7 @@ namespace UnionTypes.Toolkit.Generators
         }
     }
 
+
     public class TypeDesc : IEquatable<TypeDesc>
     {
         /// <summary>
@@ -1331,7 +1306,10 @@ namespace UnionTypes.Toolkit.Generators
         /// </summary>
         public TypeDescKind Kind { get; }
 
-        private StorageCapable Storage { get;}
+        /// <summary>
+        /// The <see cref="StorageKind"/> requested for the type.
+        /// </summary>
+        public StorageKind Storage { get; }
 
         /// <summary>
         /// The decomposible members of the type, if any.
@@ -1351,7 +1329,7 @@ namespace UnionTypes.Toolkit.Generators
         private TypeDesc(
             string typeName, 
             TypeDescKind kind, 
-            StorageCapable storage,
+            StorageKind storage,    
             IReadOnlyList<MemberDesc>? members, 
             TypeDesc? nullable,
             TypeDesc? nonNullable)
@@ -1359,14 +1337,14 @@ namespace UnionTypes.Toolkit.Generators
             this.TypeName = typeName;
             this.Kind = kind;
             this.Members = members ?? Array.Empty<MemberDesc>();
-            this.Storage = storage | GetDefaultStorageCapability(kind, this.Members);
+            this.Storage = storage == StorageKind.None ? GetDefaultStorageKind(this) : storage;
 
             if (nullable == null)
             {
                 if (IsNullableType(typeName))
                     this.Nullable = this; // i'm the nullable type
                 else
-                    this.Nullable = new TypeDesc(typeName + "?", kind, storage, members, null, this);
+                    this.Nullable = new TypeDesc(typeName + "?", kind, StorageKind.None, members, null, this);
             }
             else
             {
@@ -1376,7 +1354,7 @@ namespace UnionTypes.Toolkit.Generators
             if (nonNullable == null)
             {
                 if (IsNullableType(typeName))
-                    this.NonNullable = new TypeDesc(typeName.Substring(0, typeName.Length - 1), kind, storage, members, this, null);
+                    this.NonNullable = new TypeDesc(typeName.Substring(0, typeName.Length - 1), kind, StorageKind.None, members, this, null);
                 else
                     this.NonNullable = this; // i'm the non-nullable type
             }
@@ -1386,53 +1364,43 @@ namespace UnionTypes.Toolkit.Generators
             }
         }
 
+        private static StorageKind GetDefaultStorageKind(TypeDesc type) =>
+            type.Kind switch
+            {
+                TypeDescKind.Primitive => StorageKind.Overlap,
+                TypeDescKind.Class => StorageKind.Box,
+                TypeDescKind.Interface => StorageKind.Box,
+                TypeDescKind.Struct => StorageKind.Isolate,
+                TypeDescKind.UnconstrainedTypeParameter => StorageKind.Isolate,
+                TypeDescKind.ClassTypeParameter => StorageKind.Box,
+                TypeDescKind.StructTypeParameter => StorageKind.Isolate,
+                _ => StorageKind.Isolate
+            };
+
         private static bool IsNullableType(string typeName) => typeName.EndsWith("?");
 
-        public TypeDesc(string typeName, IReadOnlyList<MemberDesc> members)
-            : this(typeName, TypeDescKind.Struct, StorageCapable.Decomposable, members, null, null)
+        /// <summary>
+        /// Construct a <see cref="TypeDesc"/> that has no members.
+        /// </summary>
+        public TypeDesc(string typeName, TypeDescKind kind, StorageKind storage = StorageKind.None)
+            : this(typeName, kind, storage, null, null, null)
         {
         }
 
-        public TypeDesc(string typeName, TypeDescKind kind, StorageCapable storage, IReadOnlyList<MemberDesc>? members = null)
+        /// <summary>
+        /// Construct a <see cref="TypeDesc"/> that is a decomposable struct.
+        /// </summary>
+        public TypeDesc(string typeName, IReadOnlyList<MemberDesc> members)
+            : this(typeName, TypeDescKind.Struct, StorageKind.Decompose, members, null, null)
+        {
+        }
+
+        /// <summary>
+        /// Construct a <see cref="TypeDesc"/> that is a fully described.
+        /// </summary>
+        public TypeDesc(string typeName, TypeDescKind kind, StorageKind storage, IReadOnlyList<MemberDesc>? members = null)
             : this(typeName, kind, storage, members, null, null)
         {
-        }
-
-        public TypeDesc(string typeName, TypeDescKind kind, IReadOnlyList<MemberDesc>? members = null)
-            : this(typeName, kind, StorageCapable.None, members, null, null)
-        {
-        }
-
-        private static StorageCapable GetDefaultStorageCapability(TypeDescKind kind, IReadOnlyList<MemberDesc> members)
-        {
-            var storage = StorageCapable.None;
-
-            switch (kind)
-            {
-                case TypeDescKind.Primitive:
-                    storage |= StorageCapable.Overlappable | StorageCapable.Boxable;
-                    break;
-                case TypeDescKind.Class:
-                case TypeDescKind.Interface:
-                case TypeDescKind.ClassTypeParameter:                
-                    storage |= StorageCapable.Boxable;
-                    break;
-                case TypeDescKind.Struct:
-                    storage |= StorageCapable.Boxable;
-                    if (members.Count > 0)
-                        storage |= StorageCapable.Decomposable;
-                    break;
-            }
-
-            if (members.Count > 0 && AreMembersOverlappable(members))
-                storage |= StorageCapable.Overlappable;
-
-            return storage;
-        }
-
-        private static bool AreMembersOverlappable(IReadOnlyList<MemberDesc> members)
-        {
-            return members.All(m => m.Type.IsOverlappable);
         }
 
         /// <summary>
@@ -1470,25 +1438,6 @@ namespace UnionTypes.Toolkit.Generators
                 TypeDescKind.ClassTypeParameter => true,
                 _ => false
             };
-
-        /// <summary>
-        /// True if the type is known to be overlappable with other overlappable types
-        /// </summary>
-        public bool IsOverlappable => 
-            this.Storage.HasFlag(StorageCapable.Overlappable);
-
-        /// <summary>
-        /// True if the type can be decomposed into its constituent members and stored separately
-        /// </summary>
-        public bool IsDecomposable => 
-            this.Storage.HasFlag(StorageCapable.Decomposable);
-
-        /// <summary>
-        /// True if the type is a reference type or is known to be boxable
-        /// </summary>
-        public bool IsBoxable => 
-            this.IsReference 
-            || this.Storage.HasFlag(StorageCapable.Boxable);
 
         /// <summary>
         /// True if the type can be assigned null
@@ -1543,36 +1492,14 @@ namespace UnionTypes.Toolkit.Generators
         public static TypeDesc Object = new TypeDesc("object", TypeDescKind.Class);
     }
 
-    [Flags]
-    public enum StorageCapable
-    {
-        // note: all types are isolate capable.
-
-        /// <summary>
-        /// The type has no special storage capabilities (except isolate)
-        /// </summary>
-        None = 0,
-
-        /// <summary>
-        /// The type is boxable (can be stored in a shared object field)
-        /// </summary>
-        Boxable = 1 << 0,
-
-        /// <summary>
-        /// The type is decomposable into its constituent members and stored separately.
-        /// </summary>
-        Decomposable = 1 << 1,
-
-        /// <summary>
-        /// The type is overlappable with other overlappable types
-        /// </summary>
-        Overlappable = 1 << 2,
-    }
-
-    public enum StorageOverride
+    /// <summary>
+    /// The kind of storage to use for a case or member.
+    /// </summary>
+    public enum StorageKind
     {
         /// <summary>
-        /// There is no override (default behavior should be used)
+        /// No kind is specified, the default storage kind should be used based on the type.
+        /// (primitives=overlapped, reference types=boxed, structs = isolated)
         /// </summary>
         None,
         
@@ -1596,6 +1523,7 @@ namespace UnionTypes.Toolkit.Generators
         /// </summary>
         Overlap
     }
+
 
     public enum TypeDescKind
     {

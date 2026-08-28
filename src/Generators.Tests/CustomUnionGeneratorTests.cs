@@ -11,7 +11,7 @@ namespace Tests
     public class CustomUnionGeneratorTests
     {
         [TestMethod]
-        public void TestGenerate_OverlappablePrimitiveCases()
+        public void TestOverlappablePrimitiveCases()
         {
             TestGenerate(
                 new UnionInfo(
@@ -39,8 +39,9 @@ namespace Tests
         }
 
         [TestMethod]
-        public void TestGenerate_OverlappableStructCases()
+        public void TestOverlappableStructCases()
         {
+            // prove that structs will be overlapped, if at least two cases request overlap
             TestGenerate(
                 """
                 public record struct A(int Value);
@@ -49,8 +50,8 @@ namespace Tests
                 new UnionInfo(
                     "TestUnion",
                     [
-                        new CaseDesc(new TypeDesc("A", TypeDescKind.Struct, StorageCapable.Overlappable)),
-                        new CaseDesc(new TypeDesc("B", TypeDescKind.Struct, StorageCapable.Overlappable))
+                        new CaseDesc(new TypeDesc("A", TypeDescKind.Struct, StorageKind.Overlap)),
+                        new CaseDesc(new TypeDesc("B", TypeDescKind.Struct, StorageKind.Overlap))
                     ]
                     ),
                 generatedText =>
@@ -65,7 +66,59 @@ namespace Tests
         }
 
         [TestMethod]
-        public void TestGenerate_DecomposableStructCases_OverlappableElements()
+        public void TestOverlappableNonDecomposableCase_IsolatedAlternate()
+        {
+            // prove that if a non-decomposable type is the only case that overlaps, then it will be isolated instead of overlapped
+            TestGenerate(
+                """
+                public record struct A(int Value);
+                public record struct B(float Value);
+                """,
+                new UnionInfo(
+                    "TestUnion",
+                    [
+                        new CaseDesc(new TypeDesc("string", TypeDescKind.Class)),
+                        new CaseDesc(new TypeDesc("int", TypeDescKind.Primitive))
+                    ]
+                    ),
+                generatedText =>
+                {
+                    Assert.IsFalse(generatedText.Contains("_overlapped"));
+                    Assert.IsTrue(generatedText.Contains("object? _value1"));
+                    Assert.IsTrue(generatedText.Contains("int _value2"));
+                }
+                );
+        }
+
+        [TestMethod]
+        public void TestOverlappableDecomposableStructCase_DecomposableAlternate()
+        {
+            // prove that if B cannot be overlapped (since it is the only case that overlaps), then it will be decomposed instead
+            TestGenerate(
+                """
+                public record struct A(int Value);
+                public record struct B(float Value);
+                """,
+                new UnionInfo(
+                    "TestUnion",
+                    [
+                        new CaseDesc(new TypeDesc("string", TypeDescKind.Class)),
+                        new CaseDesc(new TypeDesc("B", TypeDescKind.Struct, StorageKind.Overlap, [
+                            new MemberDesc("Value", TypeDesc.Float, isParameter: true)
+                            ]))
+                    ]
+                    ),
+                generatedText =>
+                {
+                    Assert.IsFalse(generatedText.Contains("_overlapped"));
+                    Assert.IsTrue(generatedText.Contains("object? _value1"));
+                    Assert.IsTrue(generatedText.Contains("float _value2"));
+                }
+                );
+        }
+
+        [TestMethod]
+        public void TestOverlappableDecomposableStructCases()
         {
             TestGenerate(
                 """
@@ -75,13 +128,13 @@ namespace Tests
                 new UnionInfo(
                     "TestUnion",
                     [
-                        new CaseDesc(new TypeDesc("A", TypeDescKind.Struct, 
+                        new CaseDesc(new TypeDesc("A",
                             [
                                 new MemberDesc("Value", TypeDesc.Int32, isParameter: true),
                                 new MemberDesc("Value2", TypeDesc.String, isParameter: true)
                                 ]
                             )),
-                        new CaseDesc(new TypeDesc("B", TypeDescKind.Struct,
+                        new CaseDesc(new TypeDesc("B",
                             [
                                 new MemberDesc("Value", TypeDesc.Float, isParameter: true),
                                 new MemberDesc("Value2", TypeDesc.Int32, isParameter: true),
@@ -101,7 +154,7 @@ namespace Tests
         }
 
         [TestMethod]
-        public void TestGenerate_DecomposableStructCases_MixedElements()
+        public void TestDecomposableStructCases_MixedElements()
         {
             TestGenerate(
                 """
@@ -115,32 +168,32 @@ namespace Tests
                 new UnionInfo(
                     "TestUnion",
                     [
-                        new CaseDesc(new TypeDesc("A", TypeDescKind.Struct, 
+                        new CaseDesc(new TypeDesc("A",
                             [
                                 new MemberDesc("Value", TypeDesc.String, isParameter: true)
                             ]
                             )),
-                        new CaseDesc(new TypeDesc("B", TypeDescKind.Struct, 
+                        new CaseDesc(new TypeDesc("B",
                             [
                                 new MemberDesc("Value", TypeDesc.Int32, isParameter: true)
                             ]
                             )),
-                        new CaseDesc(new TypeDesc("C", TypeDescKind.Struct, 
+                        new CaseDesc(new TypeDesc("C",
                             [
                                 new MemberDesc("Value", TypeDesc.Int32, isParameter: true),
                                 new MemberDesc("Value2", TypeDesc.String, isParameter: true)
                             ])),
-                        new CaseDesc(new TypeDesc("D", TypeDescKind.Struct, 
+                        new CaseDesc(new TypeDesc("D",
                             [
                                 new MemberDesc("Value", TypeDesc.String, isParameter: true),
                                 new MemberDesc("Value2", TypeDesc.Int32, isParameter: true)
                             ])),
-                        new CaseDesc(new TypeDesc("E", TypeDescKind.Struct, 
+                        new CaseDesc(new TypeDesc("E",
                             [
                                 new MemberDesc("Value", TypeDesc.String, isParameter: true),
                                 new MemberDesc("Value2", TypeDesc.String, isParameter: true)
                             ])),
-                        new CaseDesc(new TypeDesc("F", TypeDescKind.Struct, 
+                        new CaseDesc(new TypeDesc("F",
                             [
                                 new MemberDesc("Value", TypeDesc.Int32, isParameter: true),
                                 new MemberDesc("Value2", TypeDesc.Int32, isParameter: true)
@@ -153,17 +206,17 @@ namespace Tests
                     Assert.IsTrue(generatedText.Contains("_overlapped"));
                     Assert.IsTrue(generatedText.Contains("object? _value1"));
                     Assert.IsTrue(generatedText.Contains("object? _value2"));
-                    Assert.IsTrue(generatedText.Contains("B Case2"));
+                    Assert.IsTrue(generatedText.Contains("int Case2"));
                     Assert.IsTrue(generatedText.Contains("int Case3"));
                     Assert.IsTrue(generatedText.Contains("int Case4"));
-                    Assert.IsTrue(generatedText.Contains("F Case6"));
+                    Assert.IsTrue(generatedText.Contains("(int, int) Case6"));
                 }
                 );
         }
 
 
         [TestMethod]
-        public void TestGenerate_EmptyCases()
+        public void TestEmptyCases()
         {
             // prove we can decompose empty structs into 'nothing' and still retain the case
             TestGenerate(
@@ -174,8 +227,8 @@ namespace Tests
                 new UnionInfo(
                     "TestUnion",
                     [
-                        new CaseDesc(new TypeDesc("A", TypeDescKind.Struct, StorageCapable.Decomposable)),
-                        new CaseDesc(new TypeDesc("B", TypeDescKind.Struct, StorageCapable.Decomposable))
+                        new CaseDesc(new TypeDesc("A", TypeDescKind.Struct, StorageKind.Decompose)),
+                        new CaseDesc(new TypeDesc("B", TypeDescKind.Struct, StorageKind.Decompose))
                     ]
                     ),
                 generatedText =>

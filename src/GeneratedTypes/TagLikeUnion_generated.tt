@@ -11,11 +11,11 @@
         "TagLikeUnion",
         [
             new CaseDesc(
-                new TypeDesc("Open", TypeDescKind.Struct, [new MemberDesc("Percent", TypeDesc.Float, isParameter: true)]),
+                new TypeDesc("Open", [new MemberDesc("Percent", TypeDesc.Float, isParameter: true)]),
                 generateType: true
                 ),  
             new CaseDesc(
-                new TypeDesc("Closed", TypeDescKind.Struct, [new MemberDesc("Percent", TypeDesc.Float, isParameter: true)]),
+                new TypeDesc("Closed", [new MemberDesc("Percent", TypeDesc.Float, isParameter: true)]),
                 generateType: true
                 ),
         ]
