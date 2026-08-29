@@ -36,13 +36,20 @@ namespace UnionTypes.Toolkit.Generators
 
         public bool IsGenerationCandiate(SyntaxNode node, CancellationToken ct)
         {
-            // must be partial struct with [Union] attribute
-            if (node is StructDeclarationSyntax decl
-                && decl.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword)))
+            // must be partial struct and have "Cases" method
+            return node is StructDeclarationSyntax decl
+                && decl.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword))
+                && HasCasesMethod(decl);
+
+            static bool HasCasesMethod(StructDeclarationSyntax decl)
             {
-                return true;
+                return decl.Members.Any(m =>
+                    m is MethodDeclarationSyntax method 
+                    && method.Identifier.Text == "Cases"
+                    && method.Modifiers.Any(mod => mod.IsKind(SyntaxKind.PartialKeyword))
+                    && method.ReturnType is PredefinedTypeSyntax pts && pts.Keyword.IsKind(SyntaxKind.VoidKeyword)
+                    && method.ParameterList.Parameters.Count > 0);
             }
-            return false;
         }
 
         /// <summary>
@@ -174,7 +181,7 @@ namespace UnionTypes.Toolkit.Generators
             var modifiers = GetModifiers(unionType);
             var accessibility = GetMemberAccessibilityForType(unionType);
 
-            var style = GetLayoutStyleFromComments(unionType, LayoutStyle.Tagged);
+            //var style = GetLayoutStyleFromComments(unionType, LayoutStyle.Tagged);
 
             // get all cases declared for union type
             //GetTypeCasesFromNestedTypes(unionType, cases, diagnostics);
@@ -184,10 +191,15 @@ namespace UnionTypes.Toolkit.Generators
             {
                 var fullName = GetTypeFullName(unionType);
 
+                // if all cases are storage as 'box' then use box layouted instead of tagged.                
+                var layoutStyle = cases.All(c => c.Type.Storage == StorageKind.Box)
+                    ? LayoutStyle.Boxed
+                    : LayoutStyle.Tagged;
+
                 var union = new UnionInfo(
                     fullName,
                     cases,
-                    style,
+                    layoutStyle,
                     accessibility
                     );
 
@@ -217,6 +229,7 @@ namespace UnionTypes.Toolkit.Generators
             return Array.Empty<UsingDirectiveSyntax>();
         }
 
+#if false
         /// <summary>
         /// Gets <see cref="LayoutStyle"/> from comments on the declared union type.
         /// </summary>
@@ -232,6 +245,7 @@ namespace UnionTypes.Toolkit.Generators
 
             return defaultStyle;
         }
+#endif
 
         private void GetTypeCasesFromPrivateCaseMethod(
             INamedTypeSymbol unionType, 

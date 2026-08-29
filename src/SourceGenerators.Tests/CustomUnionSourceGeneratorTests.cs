@@ -352,13 +352,17 @@ public class CustomUnionSourceGeneratorTests
 
             public partial struct MyUnion
             {
-                partial void Cases(IA case1, IB case2);
+                partial void Cases(
+                    IA case1, 
+                    IB case2, 
+                    int case3   // to keep if from switching to box layout
+                    );
             }
             """,
             generatedText =>
             {
                 Assert.IsFalse(HasOverlappedField(generatedText));
-                Assert.IsTrue(HasValueFields(generatedText, "object?"));
+                Assert.IsTrue(HasValueFields(generatedText, "object?", "int"));
                 Assert.IsTrue(HasTryGetWhen(generatedText, 1, "global::IB"));
                 Assert.IsTrue(HasTryGetWhen(generatedText, 2, "global::IA"));
             });
@@ -449,13 +453,18 @@ public class CustomUnionSourceGeneratorTests
 
             public partial struct MyUnion
             {
-                partial void Cases(A case1, B case2, C case3);
+                partial void Cases(
+                    A case1, 
+                    B case2, 
+                    C case3, 
+                    int case4   // to keep it from switching to box layout
+                    );
             }
             """,
             generatedText =>
             {
                 Assert.IsFalse(HasOverlappedField(generatedText));  // no overlappable case types types or decomposable cases with overlappable members
-                Assert.IsTrue(HasValueFields(generatedText, "object?"));   // all three cases share the same field
+                Assert.IsTrue(HasValueFields(generatedText, "object?", "int"));
 
                 Assert.IsTrue(HasTryGetWhen(generatedText, 1, "global::B"));    // B is a subclass of A
                 Assert.IsTrue(HasTryGetWhen(generatedText, 1, "global::C"));    // C is a subclass of A
@@ -797,6 +806,68 @@ public class CustomUnionSourceGeneratorTests
             );
     }
 
+    [TestMethod]
+    public void TestBoxLayout_InferredBoxedCases()
+    {
+        // if all cases prefer box layout, then the union will be boxed layout.
+        TestGenerator(
+            """
+            internal partial struct MyUnion
+            {
+                partial void Cases(
+                    string case1,
+                    A case2,
+                    B case3
+                    );
+            }
+
+            record A(int X);
+            record B(int X);
+            """,
+            generatedText =>
+            {
+                Assert.IsFalse(HasTagField(generatedText));
+                Assert.IsFalse(HasOverlappedField(generatedText));
+                Assert.IsTrue(HasValueFields(generatedText, "object?"));
+            }
+            );
+    }
+
+    [TestMethod]
+    public void TestBoxLayout_OverrideBoxedCases()
+    {
+        // if all cases prefer box layout, then the union will be boxed layout.
+        TestGenerator(
+            """
+            internal partial struct MyUnion
+            {
+                partial void Cases(
+                    string case1,
+                    // @box
+                    int case2,
+                    // @box
+                    A case3
+                    );
+            }
+
+            record struct A(int X);
+            """,
+            generatedText =>
+            {
+                Assert.IsFalse(HasTagField(generatedText));
+                Assert.IsFalse(HasOverlappedField(generatedText));
+                Assert.IsTrue(HasValueFields(generatedText, "object?"));
+            }
+            );
+    }
+
+
+    /// <summary>
+    /// Returns true if the generated text contains a declaration for the tag field.
+    /// </summary>
+    private static bool HasTagField(string text) =>
+        text.Contains("_kind");
+
     /// <summary>
     /// Returns true if the generated text contains a declaration for the overlapped field.
     /// </summary>
@@ -808,13 +879,23 @@ public class CustomUnionSourceGeneratorTests
     /// </summary>
     private static bool HasValueFields(string text, params string[] fieldTypes)
     {
-        // check for existence of each expected value field in order.
-        for (int i = 0; i < fieldTypes.Length; i++)
+        if (fieldTypes.Length == 1 
+            && fieldTypes[0] == "object?")
         {
-            var fieldType = fieldTypes[i];
-            var test = $"{fieldType} _value{i + 1};";
-            if (!text.Contains(test))
+            // if only one value field is expected and it is an object, then it can be named either _value or _value1
+            if (!text.Contains("object? _value;") && !text.Contains("object? _value1;"))
                 return false;
+        }
+        else
+        {
+            // check for existence of each expected value field in order.
+            for (int i = 0; i < fieldTypes.Length; i++)
+            {
+                var fieldType = fieldTypes[i];
+                var test = $"{fieldType} _value{i + 1};";
+                if (!text.Contains(test))
+                    return false;
+            }           
         }
 
         // check that there is no extra value field beyond the expected ones.
