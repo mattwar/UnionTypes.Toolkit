@@ -11,6 +11,29 @@ namespace Tests
     public class CustomUnionGeneratorTests
     {
         [TestMethod]
+        public void UnionInfo_WithDifferentCaseCounts_AreNotEqual()
+        {
+            var threeCases = new UnionInfo(
+                "TestUnion",
+                [
+                    new CaseDesc(TypeDesc.Int32),
+                    new CaseDesc(TypeDesc.Float),
+                    new CaseDesc(TypeDesc.Double)
+                ]);
+            var fourCases = new UnionInfo(
+                "TestUnion",
+                [
+                    new CaseDesc(TypeDesc.Int32),
+                    new CaseDesc(TypeDesc.Float),
+                    new CaseDesc(TypeDesc.Double),
+                    new CaseDesc(TypeDesc.Decimal)
+                ]);
+
+            Assert.IsFalse(threeCases.Equals(fourCases));
+            Assert.IsFalse(fourCases.Equals(threeCases));
+        }
+
+        [TestMethod]
         public void TestOverlappablePrimitiveCases()
         {
             TestGenerate(

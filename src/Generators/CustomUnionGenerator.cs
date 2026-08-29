@@ -718,13 +718,13 @@ namespace UnionTypes.Toolkit.Generators
 
             CaseLayout GetBoxedLayout(CaseDesc caseDesc, TypeDesc caseType, string tagValue)
             {
-                var field = GetField(caseType, allowBoxing: true);
+                var field = GetValueField(caseType, allowBoxing: true);
                 return new CaseLayout(caseDesc, tagValue, field);
             }
 
             CaseLayout GetIsolatedLayout(CaseDesc caseDesc, TypeDesc caseType, string tagValue)
             {
-                var field = GetField(caseType, allowBoxing: false);
+                var field = GetValueField(caseType, allowBoxing: false);
                 return new CaseLayout(caseDesc, tagValue, field);
             }
 
@@ -760,7 +760,7 @@ namespace UnionTypes.Toolkit.Generators
                     switch (member.Type.Storage)
                     {
                         case StorageKind.Box:
-                            var field = GetField(member.Type, allowBoxing: true);
+                            var field = GetValueField(member.Type, allowBoxing: true);
                             var layout = new MemberLayout(member, field, false, false, null);
                             memberLayouts.Add(layout);                        
                             break;
@@ -770,7 +770,7 @@ namespace UnionTypes.Toolkit.Generators
                             memberLayouts.Add(layout);
                             break;
                         case StorageKind.Isolate:
-                            field = GetField(member.Type, allowBoxing: false);
+                            field = GetValueField(member.Type, allowBoxing: false);
                             layout = new MemberLayout(member, field, false, false, null);
                             memberLayouts.Add(layout);
                             break;
@@ -792,7 +792,7 @@ namespace UnionTypes.Toolkit.Generators
                             else
                             {
                                 // otherwise, isolate the member
-                                field = GetField(member.Type, allowBoxing: false);
+                                field = GetValueField(member.Type, allowBoxing: false);
                                 layout = new MemberLayout(member, field, false, false, null);
                                 memberLayouts.Add(layout);
                             }
@@ -820,13 +820,13 @@ namespace UnionTypes.Toolkit.Generators
                 overlappedField
                 );
 
-            DataField GetField(TypeDesc type, bool allowBoxing)
+            DataField GetValueField(TypeDesc type, bool allowBoxing)
             {
                 DataField? field;
 
                 if (allowBoxing)
                 {
-                    // use object as type for maximal field sharing
+                    // use object? as type for maximal field sharing
                     type = TypeDesc.Object.Nullable;
                 }
 
@@ -838,7 +838,7 @@ namespace UnionTypes.Toolkit.Generators
                 }
 
                 // create a new field for this type
-                field = new DataField($"{DataFieldPrefix}{dataFields.Count + 1}", type, canShare: true);
+                field = new DataField($"{DataFieldPrefix}{dataFields.Count + 1}", type);
                 usedFields.Add(field);
                 dataFields.Add(field);
 
@@ -848,8 +848,7 @@ namespace UnionTypes.Toolkit.Generators
                 {
                     foreach (var f in dataFields)
                     {
-                        if (f.CanShare
-                            && f.Type.Equals(type)
+                        if (f.Type.Equals(type)
                             && !usedFields.Contains(f))
                         {
                             return f;
@@ -1065,14 +1064,12 @@ namespace UnionTypes.Toolkit.Generators
             public string Name { get; }
             public TypeDesc Type { get; }
             public DataField? Path { get; }
-            public bool CanShare { get; }
 
-            public DataField(string fieldName, TypeDesc type, DataField? path = null, bool canShare = false)
+            public DataField(string fieldName, TypeDesc type, DataField? path = null)
             {
                 this.Name = fieldName;
                 this.Type = type;
                 this.Path = path;
-                this.CanShare = canShare;
             }
 
             public bool IsUnionField => 
@@ -1189,7 +1186,7 @@ namespace UnionTypes.Toolkit.Generators
                 && this.Namespace.Equals(other.Namespace)
                 && this.Style == other.Style
                 && this.Accessibility == other.Accessibility
-                && this.Cases.Count != other.Cases.Count)
+                && this.Cases.Count == other.Cases.Count)
             {
                 for (int i = 0; i < this.Cases.Count; i++)
                 {
