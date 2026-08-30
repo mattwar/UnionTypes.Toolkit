@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <PackageId>UnionTypes.Toolkit.Generators</PackageId>
+    <PackageId>UnionTypes.Toolkit.Generator</PackageId>
     <PackageVersion>0.0.0</PackageVersion>
     <Authors>Matt Warren</Authors>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
