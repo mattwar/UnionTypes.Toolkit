@@ -4,6 +4,13 @@ on:
   release:
     types: [ published ]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach packages to (e.g. v1.2.3)'
+        required: true
+
+permissions:
+  contents: write
 
 jobs:
   publish:
@@ -24,7 +31,8 @@ jobs:
         id: version
         shell: bash
         run: |
-          TAG="${{ github.event.release.tag_name }}"
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Pack UnionTypes.Toolkit
@@ -44,6 +52,7 @@ jobs:
       - name: Upload packages to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           files: |
             src/UnionTypes/bin/Release/*.nupkg
             src/SourceGenerators.Package/bin/Release/*.nupkg
