@@ -4,6 +4,8 @@ name: Release
 # already-published release, so this workflow creates the release itself:
 # push a version tag (or run manually with a tag input) to trigger it, it
 # builds, creates a draft release, uploads assets, then publishes.
+# Everything runs in one job because a tag pushed with GITHUB_TOKEN does not
+# trigger a new workflow run, so a separate job can't rely on that push.
 on:
   push:
     tags:
@@ -18,29 +20,20 @@ permissions:
   contents: write
 
 jobs:
-  create-tag:
-    if: github.event_name == 'workflow_dispatch'
+  publish:
     runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # pushing this tag re-triggers the workflow, which runs the publish job below
       - name: Create and push tag
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "${{ inputs.tag }}"
           git push origin "${{ inputs.tag }}"
-
-  publish:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -53,7 +46,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${{ inputs.tag || github.ref_name }}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
