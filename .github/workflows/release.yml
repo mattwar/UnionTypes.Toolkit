@@ -2,8 +2,8 @@ name: Release
 
 # Draft releases never trigger workflows, and assets can't be uploaded to an
 # already-published release, so this workflow creates the release itself:
-# push a version tag to trigger it, it builds, creates a draft release,
-# uploads assets, then publishes.
+# push a version tag (or run manually with a tag input) to trigger it, it
+# builds, creates a draft release, uploads assets, then publishes.
 on:
   push:
     tags:
@@ -11,14 +11,31 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build and release (e.g. v1.2.3)'
+        description: 'New tag to create and release (e.g. v1.2.3)'
         required: true
 
 permissions:
   contents: write
 
 jobs:
+  create-tag:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # pushing this tag re-triggers the workflow, which runs the publish job below
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ inputs.tag }}"
+          git push origin "${{ inputs.tag }}"
+
   publish:
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
 
     steps:
@@ -36,7 +53,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
+          TAG="${{ github.ref_name }}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
