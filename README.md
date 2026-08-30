@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mattwar/UnionTypes.Toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/mattwar/UnionTypes.Toolkit/actions/workflows/ci.yml)
 [![GitHub release](https://img.shields.io/github/v/release/mattwar/UnionTypes.Toolkit)](https://github.com/mattwar/UnionTypes.Toolkit/releases/latest)
-[![NuGet](https://img.shields.io/nuget/v/UnionTypes.Toolkit.Generators)](https://www.nuget.org/packages/UnionTypes.Toolkit.Generators)
+[![NuGet](https://img.shields.io/nuget/v/UnionTypes.Toolkit.Generator)](https://www.nuget.org/packages/UnionTypes.Toolkit.Generator)
 
 This repo contains a library implementing some common custom union types compatible with the C# union type feature and a source generator that generates custom C# union types that uses techniques to avoid boxing and minimize memory footprint.
 
@@ -21,7 +21,7 @@ It currently includes implementations of Option, Result and a family of generic 
 *This library is not yet published to NuGet, but can be accessed from releases on GitHub.*
 
 
-## The UnionTypes.Toolkit.Generators Library
+## The UnionTypes.Toolkit.Generator Library
 
 This library implements a C# source generator for generating non-boxing custom union types compatible with the C# union types feature. It may contain additional generators in the future.
 
@@ -31,7 +31,7 @@ The generator is purely standalone; the generated union source does not depend o
 
 The generator is available as a nuget package, or can be accessed from release builds here on GitHub.
 
-### [Download from Nuget Here](https://www.nuget.org/packages/UnionTypes.Toolkit.Generators)
+### [Download from Nuget Here](https://www.nuget.org/packages/UnionTypes.Toolkit.Generator)
 
 
 ## Declaring a Non-Boxing Custom Union Type
