@@ -1,44 +1,36 @@
 namespace UnionTypes.Toolkit;
 
+/// <summary>
+/// A union that may contain either a <see cref="Some{T}"/> value or a <see cref="None"/> value.
+/// It is similar to <see cref="System.Nullable{T}"/>, except the value can be also be a reference type and may use null as a valid value.
+/// </summary>
 [System.Runtime.CompilerServices.Union]
 public struct Option<T>
     : System.Runtime.CompilerServices.IUnion
 {   
-    private readonly object? _value;
-
-    private static readonly bool _isNoneType = typeof(T) == typeof(None);
+    private readonly T _value;
+    private readonly bool _hasValue;
 
     public Option(Some<T> value) 
     { 
-        if (_isNoneType)
-        {
-            // some cheeky user has used the None type as the value type.
-            _value = _someOfNoneBoxed;
-        }
-        else
-        {
-            _value = value.Value;            
-        }
+        _value = value.Value;
+        _hasValue = true;
     }
 
     public Option(None value)
     {
         // store None as null, so it matches the same state as when the struct is default-initialized.
-        _value = null;
+        _value = default!;
+        _hasValue = false;
     }
 
-    public bool HasValue => false; // we return None if null, so HasValue is always false
+    public bool HasValue => true; // always has either some or none, so this is always true.
 
     public bool TryGetValue(out Some<T> value)
     {
-        if (_value is T val)
+        if (_hasValue)
         {
-            value = new Some<T>(val);
-            return true;
-        }
-        else if (_value is Some<T> someValue)
-        {
-            value = someValue;
+            value = new Some<T>(_value);
             return true;
         }
         else
@@ -50,9 +42,9 @@ public struct Option<T>
 
     public bool TryGetValue(out None value)
     {
-        if (_value == null)
+        if (!_hasValue)
         {
-            value = Option.None;
+            value = new None();
             return true;
         }
         else
@@ -62,17 +54,10 @@ public struct Option<T>
         }
     }
 
-    public object Value => _value switch
-    {
-        null => _noneBoxed,
-        T val => val,
-        _ => _value
-    };
+    public object Value => 
+        _hasValue ? new Some<T>(_value) : new None();
 
-    public static implicit operator Option<T>(T value) => new Option<T>(new Some<T>(value));   
-
-    private readonly object _noneBoxed = new None();
-    private readonly object _someOfNoneBoxed = new Some<None>(new None());
+    public static implicit operator Option<T>(T value) => new Option<T>(new Some<T>(value));
 }
 
 /// <summary>

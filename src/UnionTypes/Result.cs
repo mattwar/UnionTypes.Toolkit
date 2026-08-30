@@ -3,67 +3,38 @@ using ErrorType=System.Exception;
 
 namespace UnionTypes.Toolkit;
 
+/// <summary>
+/// A union that may contain either a <see cref="Success{TValue}"/> value or a <see cref="Failure{TError}"/> value.
+/// </summary>
 [System.Runtime.CompilerServices.Union]
 public struct Result<TValue, TError>
     : System.Runtime.CompilerServices.IUnion
 {
-    private readonly object? _value;
-
-    private static readonly bool _typeArgsMatch = 
-        typeof(TValue).IsAssignableTo(typeof(TError))
-        || typeof(TError).IsAssignableFrom(typeof(TValue));
+    private readonly byte _kind;
+    private readonly TValue _value;
+    private readonly TError _error;
 
     public Result(Success<TValue> value)
     {
-        if (_typeArgsMatch)
-        {
-            // both TValue and TError have intersecting types, so we must store the value as the Success<TValue> boxed.
-            _value = value;
-        }
-        else if (value.Value == null)
-        {
-            // the success value is itself null, use the pre-boxed default.
-            _value = _successDefaultBoxed;
-        }
-        else
-        {
-            // Store the non-null success value itself.
-            // This does not incur boxing of the Success<TValue> struct, but it does incur boxing of the TValue value if it is a value type.
-            _value = value.Value;
-        }
+        _kind = 1;
+        _value = value.Value;
+        _error = default!;
     }
 
     public Result(Failure<TError> value)
     {
-        if (_typeArgsMatch)
-        {
-            // both TValue and TError have intersecting types, so we must store the value as the Failure<TError> boxed.
-            _value = value;
-        }
-        else if (value.Error == null)
-        {
-            _value = _failureDefaultBoxed;
-        }
-        else       
-        {
-            // Store the failure value itself.
-            // This does not incur boxing of the Failure<TError> struct, but it does incur boxing of the TError value if it is a value type.
-            _value = value.Error;
-        }
+        _kind = 2;
+        _value = default!;
+        _error = value.Error;
     }
 
-    public bool HasValue => _value != null;
+    public bool HasValue => _kind != 0; // has no value if uninitialized, otherwise has either success or failure.
 
     public bool TryGetValue(out Success<TValue> value)
     {
-        if (_value is TValue val)
+        if (_kind == 1)
         {
-            value = new Success<TValue>(val);
-            return true;
-        }
-        else if (_value is Success<TValue> successValue)
-        {
-            value = successValue;
+            value = new Success<TValue>(_value);
             return true;
         }
         else
@@ -75,14 +46,9 @@ public struct Result<TValue, TError>
 
     public bool TryGetValue(out Failure<TError> value)
     {
-        if (_value is TError err)
+        if (_kind == 2)
         {
-            value = new Failure<TError>(err);
-            return true;
-        }
-        else if (_value is Failure<TError> failureValue)
-        {
-            value = failureValue;
+            value = new Failure<TError>(_error);
             return true;
         }
         else
@@ -92,29 +58,40 @@ public struct Result<TValue, TError>
         }
     }   
 
-    public object? Value => _value switch
+    public object Value => _kind switch
     {
-        TValue val => new Success<TValue>(val),
-        TError err => new Failure<TError>(err),
-        Success<TValue> succ => succ,
-        Failure<TError> fail => fail,
-        _ => null
+        1 => new Success<TValue>(_value),
+        2 => new Failure<TError>(_error),
+        _ => throw new System.InvalidOperationException("Result is uninitialized and has no value.")
     };
 
     public static implicit operator Result<TValue, TError>(TValue value) => new Result<TValue, TError>(new Success<TValue>(value));
     public static implicit operator Result<TValue, TError>(TError error) => new Result<TValue, TError>(new Failure<TError>(error));
-
-    private readonly object _successDefaultBoxed = new Success<TValue>(default!);
-    private readonly object _failureDefaultBoxed = new Failure<TError>(default!);
 }
 
-
+/// <summary>
+/// Represents a successful result in a Result union.
+/// </summary>
 public record struct Success<T>(T Value);
+
+/// <summary>
+/// Represents a failed result in a Result union.
+/// </summary>
 public record struct Failure<T>(T Error);
 
 
+/// <summary>
+/// Helper class for creating Result union instances.
+/// </summary>
 public static class Result
 {
+    /// <summary>
+    /// Creates a <see cref="Success{TValue}"/> instance with the specified value.
+    /// </summary>
     public static Success<TValue> Success<TValue>(TValue value) => new Success<TValue>(value);
+
+    /// <summary>
+    /// Creates a <see cref="Failure{TError}"/> instance with the specified error.
+    /// </summary>
     public static Failure<TError> Failure<TError>(TError error) => new Failure<TError>(error);
 }
