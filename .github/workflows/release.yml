@@ -1,14 +1,17 @@
 name: Release
 
-# GitHub blocks asset uploads to a release once it's published, so this
-# workflow runs while the release is still a draft, then publishes it.
+# Draft releases never trigger workflows, and assets can't be uploaded to an
+# already-published release, so this workflow creates the release itself:
+# push a version tag to trigger it, it builds, creates a draft release,
+# uploads assets, then publishes.
 on:
-  release:
-    types: [ created ]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to attach packages to (e.g. v1.2.3)'
+        description: 'Tag to build and release (e.g. v1.2.3)'
         required: true
 
 permissions:
@@ -33,7 +36,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          TAG="${{ inputs.tag || github.ref_name }}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
@@ -51,17 +54,18 @@ jobs:
           -p:Version=${{ steps.version.outputs.version }}
           -p:PackageVersion=${{ steps.version.outputs.version }}
 
-      - name: Upload packages to release
+      # creates the release (if it doesn't exist) as a draft and uploads assets
+      - name: Create draft release and upload packages
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           draft: true
+          generate_release_notes: true
           files: |
             src/UnionTypes/bin/Release/*.nupkg
             src/SourceGenerators.Package/bin/Release/*.nupkg
 
       - name: Publish release
-        if: github.event_name == 'release' && github.event.release.draft == true
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "${{ steps.version.outputs.tag }}" --draft=false --repo "${{ github.repository }}"
