@@ -1,8 +1,10 @@
 name: Release
 
+# GitHub blocks asset uploads to a release once it's published, so this
+# workflow runs while the release is still a draft, then publishes it.
 on:
   release:
-    types: [ published ]
+    types: [ created ]
   workflow_dispatch:
     inputs:
       tag:
@@ -53,6 +55,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
+          draft: true
           files: |
             src/UnionTypes/bin/Release/*.nupkg
             src/SourceGenerators.Package/bin/Release/*.nupkg
+
+      - name: Publish release
+        if: github.event_name == 'release' && github.event.release.draft == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ steps.version.outputs.tag }}" --draft=false --repo "${{ github.repository }}"
