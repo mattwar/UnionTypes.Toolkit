@@ -26,7 +26,7 @@ namespace Tests
         {
             Result<int, Exception> result = default;
             Assert.IsFalse(result.HasValue);
-            Assert.IsTrue(result.Value is null);
+            Assert.ThrowsException<InvalidOperationException>(() => { var value = result.Value; });
         }
 
         [TestMethod]

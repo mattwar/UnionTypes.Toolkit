@@ -1,4 +1,4 @@
-﻿# UnionTypes.Toolkit.Generators
+﻿# UnionTypes.Toolkit.Generator
 
 A C# source generator library for generating custom union types compatible with the C# union types feature.
 
@@ -35,4 +35,4 @@ The generator will layout the contents of the custom union so that the fields st
 
 In this example, there will be a single field storing a struct that contains enough space to store either an int, float, Coordinate or the address Id and a sparate object field used to store either a string, IManifest or the address Name.
 
-# [Learn how to customize the union generation further](https://github.com/mattwar/UnionTypes.Toolkit)
+[Learn how to customize the union generation further](https://github.com/mattwar/UnionTypes.Toolkit)

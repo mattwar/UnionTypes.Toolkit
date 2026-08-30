@@ -2,37 +2,70 @@
 
 [![CI](https://github.com/mattwar/UnionTypes.Toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/mattwar/UnionTypes.Toolkit/actions/workflows/ci.yml)
 [![GitHub release](https://img.shields.io/github/v/release/mattwar/UnionTypes.Toolkit)](https://github.com/mattwar/UnionTypes.Toolkit/releases/latest)
-[![NuGet](https://img.shields.io/nuget/v/UnionTypes.Toolkit.Generator)](https://www.nuget.org/packages/UnionTypes.Toolkit.Generator)
 
-This repo contains a library implementing some common custom union types compatible with the C# union type feature and a source generator that generates custom C# union types that uses techniques to avoid boxing and minimize memory footprint.
+This repo is the source beind two packages available on Nuget.
 
-This library was originally one of many similar libraries I created when designing and working on the C# Union Types feature. It has now been refitted to match the shipping design and the generator reimplemented to be more robust.
+- [UnionTypes.Toolkit](#uniontypestoolkit) - a library of common custom union types  
+   [![NuGet](https://img.shields.io/nuget/v/UnionTypes.Toolkit.Generator)](https://www.nuget.org/packages/UnionTypes.Toolkit.Generator)
 
-Please report bugs here under issues or submit PRs to fix them if you prefer. 
+- [UnionTypes.Toolkit.Generator](#uniontypestoolkitgenerator) - a source generator for non-boxing custom unions  
+   [![NuGet](https://img.shields.io/nuget/v/UnionTypes.Toolkit)](https://www.nuget.org/packages/UnionTypes.Toolkit)
+
+
+### What is this?
+
+This repo was originally created as a design playground when working on the C# Union Types feature. It was meant to contain various hand built union types with a variety of implementation strategies and a general configurable source generator that would produce custom unions using the techniques being discussed during design meetings.
+This was long before any actual design was settled on and language feature worked started.
+
+The original nuget release years ago contained a very different concept of unions to what has now become a feature for C# 15. 
+
+Both the toolkit library and the source generator have been updated to match the new C# Union Types feature, and both are now available for general use.
+
+The source generator has been retrofitted to produce only unions matching the specification for C# Union Types feature and using the Custom Unions API's. 
+The generator produces unions that do not box struct values by default.
+
+### How to Contribute
+
+Please report bugs here under issues or submit PRs to fix them if you prefer.  
 Use discussions instead of issues to share ideas or make requests.
 
+----
+<br/>
 
-## The UnionTypes.Toolkit Library
+## UnionTypes.Toolkit
 
-**This is a work in progress**  
+A collection of common union types compatible with the C# Union Types feature.
 
-It currently includes implementations of Option, Result and a family of generic 'boxed' unions, for use when you don't need the formality of inventing a new named union. There is also a family of non-boxing (fat) generic unions for when you don't like boxing and are not concerned with memory footprint.
+**Option**
 
-*This library is not yet published to NuGet, but can be accessed from releases on GitHub.*
+The `Option<TValue>` union type allows you to represent either `Some<TValue>` or `None` without boxing.
 
+**Result**
 
-## The UnionTypes.Toolkit.Generator Library
+The `Result<TValue, TError>` union type allows you to represent either `Success<TValue>` or `Failure<TError>` without boxing.
+
+**Union**
+
+A family of generic union types `Union<T1, T2>`, `Union<T1, T2, T3>`, etc.
+
+You can use these without declaring a unique named union type.
+The held value will be boxed, however.
+
+**FatUnion**
+
+A family of generic union types `FatUnion<T1, T2>`, `FatUnion<T1, T2, T3>`, etc.  
+
+You can use these without declaring a unique named union type.
+The held value will not be boxed, but the type requires a memory footprint similar to using a tuple.
+
+----
+<br/>
+
+## UnionTypes.Toolkit.Generator
 
 This library implements a C# source generator for generating non-boxing custom union types compatible with the C# union types feature. It may contain additional generators in the future.
 
 The generator is purely standalone; the generated union source does not depend on the union type library or any other external library beyond the standard dotnet runtime to function.
-
-### Download the Generator
-
-The generator is available as a nuget package, or can be accessed from release builds here on GitHub.
-
-### [Download from Nuget Here](https://www.nuget.org/packages/UnionTypes.Toolkit.Generator)
-
 
 ## Declaring a Non-Boxing Custom Union Type
 
