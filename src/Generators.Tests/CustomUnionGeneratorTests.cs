@@ -48,7 +48,7 @@ namespace Tests
                 generatedText =>
                 {
                     // prove that the two primitives got overlapped into the overlapped field
-                    Assert.IsTrue(generatedText.Contains("int _kind"));                    
+                    Assert.IsTrue(generatedText.Contains("_kind"));                    
                     Assert.IsTrue(generatedText.Contains("_overlapped"));
                     Assert.IsFalse(generatedText.Contains("_value1"));
 
@@ -79,7 +79,7 @@ namespace Tests
                     ),
                 generatedText =>
                 {
-                    Assert.IsTrue(generatedText.Contains("int _kind"));                    
+                    Assert.IsTrue(generatedText.Contains("_kind"));                    
                     Assert.IsTrue(generatedText.Contains("_overlapped"));
                     Assert.IsFalse(generatedText.Contains("_value1"));
                     Assert.IsTrue(generatedText.Contains("A Case1"));
@@ -167,7 +167,7 @@ namespace Tests
                     ),
                 generatedText =>
                 {
-                    Assert.IsTrue(generatedText.Contains("int _kind"));                    
+                    Assert.IsTrue(generatedText.Contains("_kind"));                    
                     Assert.IsTrue(generatedText.Contains("_overlapped"));
                     Assert.IsTrue(generatedText.Contains("_value1"));
                     Assert.IsTrue(generatedText.Contains("int Case1"));
@@ -225,7 +225,7 @@ namespace Tests
                     ),
                 generatedText =>
                 {
-                    Assert.IsTrue(generatedText.Contains("int _kind"));                    
+                    Assert.IsTrue(generatedText.Contains("_kind"));                    
                     Assert.IsTrue(generatedText.Contains("_overlapped"));
                     Assert.IsTrue(generatedText.Contains("object? _value1"));
                     Assert.IsTrue(generatedText.Contains("object? _value2"));
@@ -256,7 +256,7 @@ namespace Tests
                     ),
                 generatedText =>
                 {
-                    Assert.IsTrue(generatedText.Contains("int _kind"));                    
+                    Assert.IsTrue(generatedText.Contains("_kind"));                    
                     // there is no overlapped data so the field should not exist
                     Assert.IsFalse(generatedText.Contains("_overlapped"));
                     // there is no data other than the tag _kind, so no value fields should exist

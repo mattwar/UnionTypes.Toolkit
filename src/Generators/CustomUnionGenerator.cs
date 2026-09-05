@@ -68,6 +68,7 @@ namespace UnionTypes.Toolkit.Generators
             void WriteUnion()
             {
                 _writer.WriteLine("[System.Runtime.CompilerServices.Union]");
+                _writer.WriteLine($"[StructLayout(LayoutKind.Sequential)]");
                 _writer.WriteLine($"{union.Accessibility} partial struct {union.DeclarationName} : System.Runtime.CompilerServices.IUnion");
                 _writer.WriteBraceNested(() =>
                 {
@@ -91,15 +92,22 @@ namespace UnionTypes.Toolkit.Generators
         /// </summary>
         private void WriteStorageFields(UnionLayout layout)
         {
-            if (layout.TagField != null)
-                _writer.WriteLine($"private readonly {layout.TagField.Type.TypeName} {layout.TagField.Name};");
+            // place data fields up front since they are either reference type fiels or 
+            // likely contain reference types (otherwise they would have been overlapped)
+            // and will always be pointer-size aligned.
+            foreach (var field in layout.DataFields)
+            {
+                _writer.WriteLine($"private readonly {field.Type.TypeName} {field.Name};");
+            }
 
             if (layout.OverlappedField != null)
                 _writer.WriteLine($"private readonly {layout.OverlappedField.Type.TypeName} {layout.OverlappedField.Name};");
 
-            foreach (var field in layout.DataFields)
+            // put tag field at end so it may fit inside any otherwise padding space left over from the overlapped field being less than pointer size aligned.
+            if (layout.TagField != null)
             {
-                _writer.WriteLine($"private readonly {field.Type.TypeName} {field.Name};");
+                var type = layout.CaseLayouts.Count <= 255 ? "byte" : "ushort";
+                _writer.WriteLine($"private readonly {type} {layout.TagField.Name};");                
             }
         }
 

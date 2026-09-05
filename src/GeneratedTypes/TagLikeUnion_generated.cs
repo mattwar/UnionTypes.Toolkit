@@ -12,10 +12,11 @@ using System.Runtime.InteropServices;
 #pragma warning disable CS8618
 
 [System.Runtime.CompilerServices.Union]
+[StructLayout(LayoutKind.Sequential)]
 public partial struct TagLikeUnion : System.Runtime.CompilerServices.IUnion
 {
-    private readonly int _kind;
     private readonly Overlapped _overlapped;
+    private readonly byte _kind;
 
     [StructLayout(LayoutKind.Explicit)]
     private struct Overlapped
