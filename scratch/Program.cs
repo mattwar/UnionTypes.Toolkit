@@ -1,9 +1,11 @@
-var u = new MyUnion(new A(1, 2.0f));
+using System.Runtime.CompilerServices;
 
-Console.WriteLine(u);
+var u = new MyUnion(new A(1, 2));
 
-if (u is A)
-   Console.WriteLine("I'm an A");
+Console.WriteLine($"size: {Unsafe.SizeOf<MyUnion>()}");
+
+if (u is byte)
+   Console.WriteLine("I'm a byte");
 
 if (u is IFoo)
    Console.WriteLine("I'm an IFoo");
@@ -20,12 +22,12 @@ public partial struct MyUnion
         int x,
         IBar bar,
         IFoo foo,
-        A a
+        byte y
         );
 }
 
 public interface IFoo {}
 public interface IBar {}
-public record struct A(int X, float Y) : IFoo;
+public record struct A(int X, byte Y) : IFoo;
 
 
