@@ -69,11 +69,11 @@ The generator is purely standalone; the generated union source does not depend o
 
 ## Declaring a Non-Boxing Custom Union Type
 
-Declare a partial record struct type with a partial void `Cases` method, whose parameters denote the case types for the union. 
+Declare a partial struct type with a partial void `Cases` method, whose parameters denote the case types for the union. 
 The names of the parameters are not used, so any name will do.
 
 ```csharp
-public partial record struct MyUnion
+public partial struct MyUnion
 {
     partial void Cases(
         int case1, 
@@ -108,7 +108,7 @@ For example, if a struct cannot be overlapped with other cases because it contai
 If you don't want this to happen, you can use the @isolate annotation to keep the value whole by using an extra field to store it, increasing the memory footprint of the union, or use the @box annotation to box it instead and store it in the same field used to store the string or IManifest cases.
 
 ```csharp
-public partial record struct MyUnion
+public partial struct MyUnion
 {
     partial void Cases(
         int case1, 
@@ -136,7 +136,7 @@ Typically, specifying the `@overlap` annotation does nothing since the case woul
 However, if you specify `@overlap` on a type known to not be overlappable, the generator will produce a warning and not overlap the type.
 
 ```csharp
-public partial record struct MyUnion
+public partial struct MyUnion
 {
     partial void Cases(
         int case1, 
@@ -162,7 +162,7 @@ The generator will choose to decompose a struct if it is not overlappable and de
 If the generator does not choose to decompose your struct case, but you are confident it can be trusted you can specify the `@decompose` annotation to request it do so.
 
 ```csharp
-public partial record struct MyUnion
+public partial struct MyUnion
 {
     partial void Cases(
         GoodStructA structA,    // automatically decomposed
@@ -191,7 +191,7 @@ Some structs can still not be decomposed even if you request it. This may happen
 You can choose to have any case isolated into its own field. This happens automatically, if the case cannot be overlapped or decomposed.  If neither overlapping or decomposition is suitable, you can specify the `@isolate` annotation to force it to be isolated as whole.  
 
 ```csharp
-public partial record struct MyUnion
+public partial struct MyUnion
 {
     partial void Cases(
         int case1,
@@ -211,7 +211,7 @@ This can be a good idea if you have reasons to believe that metadata may not be 
 The source generator will never choose to box a struct value, but you can request it using the `@box` annotation.
 
 ```csharp
-public partial record struct MyUnion
+public partial struct MyUnion
 {
     partial void Cases(
         // @box
