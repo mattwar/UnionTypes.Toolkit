@@ -10,11 +10,11 @@ It may include additional generators in the future.
 
 ## Declaring a Non-Boxing Custom Union Type
 
-Declare a partial record struct type with a partial void `Cases` method, whose parameters denote the case types for the union. 
+Declare a partial struct type with a partial void `Cases` method, whose parameters denote the case types for the union. 
 The names of the parameters are not used, so any name will do.
 
 ```csharp
-public partial record struct MyUnion
+public partial struct MyUnion
 {
     partial void Cases(
         int case1, 
