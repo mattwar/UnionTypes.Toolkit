@@ -73,8 +73,10 @@ namespace UnionTypes.Toolkit.Generators
         {
             if (info != null)
             {
-                if (info.Diagnostics.Count > 0)
+                if (info.Diagnostics.Count > 0
+                    && info.Diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
                 {
+                    // don't generate source if there were actual errors
                     return new GenerateResult("", "", info.Diagnostics);
                 }
                 else
@@ -94,6 +96,7 @@ namespace UnionTypes.Toolkit.Generators
         {
             if (resultx is GenerateResult result)
             {
+                // report any diagnostics from the generation process
                 if (result.Diagnostics.Count > 0)
                 {
                     foreach (var dx in result.Diagnostics)
@@ -101,7 +104,9 @@ namespace UnionTypes.Toolkit.Generators
                         context.ReportDiagnostic(dx);
                     }
                 }
-                else
+
+                // add source if any is generated
+                if (!string.IsNullOrWhiteSpace(result.Text))
                 {
                     context.AddSource(result.FileName, result.Text);
                 }
@@ -181,10 +186,7 @@ namespace UnionTypes.Toolkit.Generators
             var modifiers = GetModifiers(unionType);
             var accessibility = GetMemberAccessibilityForType(unionType);
 
-            //var style = GetLayoutStyleFromComments(unionType, LayoutStyle.Tagged);
-
             // get all cases declared for union type
-            //GetTypeCasesFromNestedTypes(unionType, cases, diagnostics);
             GetTypeCasesFromPrivateCaseMethod(unionType, cases, diagnostics);
 
             if (cases.Count > 0)
@@ -228,24 +230,6 @@ namespace UnionTypes.Toolkit.Generators
 
             return Array.Empty<UsingDirectiveSyntax>();
         }
-
-#if false
-        /// <summary>
-        /// Gets <see cref="LayoutStyle"/> from comments on the declared union type.
-        /// </summary>
-        private LayoutStyle GetLayoutStyleFromComments(ISymbol symbol, LayoutStyle defaultStyle)
-        {
-            if (TryGetCommentProperty(symbol, "Layout", out var value))
-            {
-                if (Enum.TryParse(value, ignoreCase: true, out LayoutStyle style))
-                {
-                    return style;
-                }
-            }
-
-            return defaultStyle;
-        }
-#endif
 
         private void GetTypeCasesFromPrivateCaseMethod(
             INamedTypeSymbol unionType, 
@@ -793,16 +777,17 @@ namespace UnionTypes.Toolkit.Generators
             if (!type.IsValueType)
                 return TrustLevel.NotPossible;
 
-                if (type.TypeKind == CATypeKind.Enum
-                    || IsPrimitiveStruct(type))
-                {
-                    return TrustLevel.Trusted;
-                }
-
             if (type.IsNullable())
                 return GetOverlappableTrust(type.GetNonNullableType());
 
-            // must be declared in source to be certain that all fields are actually represented in the metadata
+            // simple enums and primitives are trusted to be overlappable
+            if (type.TypeKind == CATypeKind.Enum
+                || IsPrimitiveStruct(type))
+            {
+                return TrustLevel.Trusted;
+            }
+
+            // for other structs, if any member is not trusted, then it is not possible to overlap
             if (type.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic).Any(f => !IsTrustedOverlappableType(f.Type)))
             {
                 return TrustLevel.NotPossible;            
@@ -827,13 +812,13 @@ namespace UnionTypes.Toolkit.Generators
             // tuples are always trusted decomposable
             if (type.IsValueType 
                 && type.IsTupleType)
-                return TrustLevel.NotPossible;
+                return TrustLevel.Trusted;
 
-            // primitives cannot be decomposed
+            // primitives cannot be decomposed (no members)
             if (IsPrimitiveStruct(type))
                 return TrustLevel.NotPossible;
 
-            // trust only records with simple primary constructors and/or all public settable properties declared in source.
+            // trust only structs with simple primary constructors and/or all public settable properties declared in source.
             if (type.IsValueType
                 && type is INamedTypeSymbol nt)
             {
@@ -842,14 +827,15 @@ namespace UnionTypes.Toolkit.Generators
 
                 if (type.IsRecord)
                 {
-                    // if record than trust that primary constructor parameters are associated with properties.
-                    // otherwise requires that all public properties and fields are settable.
+                    // if record then trust that primary constructor parameters are associated with properties.
+                    // and require that any other property or field is public and settable
                     return HasOnlyPublicSettableMembers(type) 
                         ? TrustLevel.Trusted 
                         : TrustLevel.NotTrusted;
                 }
                 else
                 {
+                    // not a record, so require a default constructor and all properties and fields are public and settable.
                     if (!hasDefaultConstructor)
                         return TrustLevel.NotPossible;
                     return HasOnlyPublicSettableMembers(type) 
