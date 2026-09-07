@@ -6,10 +6,10 @@
 This repo is the source beind two packages available on Nuget.
 
 - [UnionTypes.Toolkit](#uniontypestoolkit) - a library of common custom union types  
-   [![NuGet](https://img.shields.io/nuget/v/UnionTypes.Toolkit.Generator)](https://www.nuget.org/packages/UnionTypes.Toolkit.Generator)
+   [![NuGet](https://img.shields.io/nuget/v/UnionTypes.Toolkit)](https://www.nuget.org/packages/UnionTypes.Toolkit)
 
 - [UnionTypes.Toolkit.Generator](#uniontypestoolkitgenerator) - a source generator for non-boxing custom unions  
-   [![NuGet](https://img.shields.io/nuget/v/UnionTypes.Toolkit)](https://www.nuget.org/packages/UnionTypes.Toolkit)
+   [![NuGet](https://img.shields.io/nuget/v/UnionTypes.Toolkit.Generator)](https://www.nuget.org/packages/UnionTypes.Toolkit.Generator)
 
 
 ### What is this?
