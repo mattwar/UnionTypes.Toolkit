@@ -36,20 +36,34 @@ namespace UnionTypes.Toolkit.Generators
 
         public bool IsGenerationCandiate(SyntaxNode node, CancellationToken ct)
         {
-            // must be partial struct and have "Cases" method
+            // must be partial struct and have "Union" comment property or "Cases" method
             return node is StructDeclarationSyntax decl
                 && decl.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword))
-                && HasCasesMethod(decl);
+                && (HasUnionProperty(decl) || HasCasesMethod(decl));
+        }
 
-            static bool HasCasesMethod(StructDeclarationSyntax decl)
-            {
-                return decl.Members.Any(m =>
-                    m is MethodDeclarationSyntax method 
-                    && method.Identifier.Text == "Cases"
-                    && method.Modifiers.Any(mod => mod.IsKind(SyntaxKind.PartialKeyword))
-                    && method.ReturnType is PredefinedTypeSyntax pts && pts.Keyword.IsKind(SyntaxKind.VoidKeyword)
-                    && method.ParameterList.Parameters.Count > 0);
-            }
+        private static bool HasUnionProperty(StructDeclarationSyntax decl)
+        {
+            return decl.HasCommentProperty("union");
+        }
+
+        private static bool HasCasesMethod(StructDeclarationSyntax decl)
+        {
+            return decl.Members.Any(m =>
+                m is MethodDeclarationSyntax method 
+                && method.Identifier.Text == "Cases"
+                && method.Modifiers.Any(mod => mod.IsKind(SyntaxKind.PartialKeyword))
+                && method.ReturnType is PredefinedTypeSyntax pts && pts.Keyword.IsKind(SyntaxKind.VoidKeyword)
+                && method.ParameterList.Parameters.Count > 0);
+        }
+
+        private static bool HasCasesMethod(INamedTypeSymbol symbol)
+        {
+            return symbol.GetMembers().OfType<IMethodSymbol>().Any(method =>
+                method.Name == "Cases"
+                && method.IsPartialDefinition
+                && method.ReturnsVoid
+                && method.Parameters.Length > 0);
         }
 
         /// <summary>
@@ -187,7 +201,14 @@ namespace UnionTypes.Toolkit.Generators
             var accessibility = GetMemberAccessibilityForType(unionType);
 
             // get all cases declared for union type
-            GetTypeCasesFromPrivateCaseMethod(unionType, cases, diagnostics);
+            if (HasCasesMethod(unionType))
+            {
+                GetTypeCasesFromPrivateCaseMethod(unionType, cases, diagnostics);               
+            }
+            else
+            {
+                GetTypeCasesFromPartialConstructors(unionType, cases, diagnostics);
+            }
 
             if (cases.Count > 0)
             {
@@ -231,6 +252,33 @@ namespace UnionTypes.Toolkit.Generators
             return Array.Empty<UsingDirectiveSyntax>();
         }
 
+        private void GetTypeCasesFromPartialConstructors(
+            INamedTypeSymbol unionType,
+            List<CaseDesc> cases,
+            List<Diagnostic> diagnostics)
+        {
+            var partialConstructors = unionType.GetMembers()
+                .OfType<IMethodSymbol>()
+                .Where(m => m.MethodKind == MethodKind.Constructor
+                    && m.IsPartialDefinition
+                    && m.Parameters.Length == 1)
+                .ToList();
+
+            var caseTypes = new List<ITypeSymbol>();
+            foreach (var pc in partialConstructors)
+            {
+                caseTypes.Add(pc.Parameters[0].Type);
+            }
+
+            for (int i = 0; i < caseTypes.Count; i++)
+            {
+                var pc = partialConstructors[i];
+                var declaringNode = pc.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax()!;
+                var caseDesc = GetCaseDesc(caseTypes, i, diagnostics, declaringNode, pc.Parameters[0].Name, hasPartialConstructorDefinition: true);
+                cases.Add(caseDesc);
+            }           
+        }
+
         private void GetTypeCasesFromPrivateCaseMethod(
             INamedTypeSymbol unionType, 
             List<CaseDesc> cases,
@@ -262,7 +310,7 @@ namespace UnionTypes.Toolkit.Generators
                 {
                     var caseType = caseTypes[i];
                     var declaringNode = caseParams[i].DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax()!;
-                    var caseDesc = GetCaseDesc(caseTypes, i, diagnostics, declaringNode);
+                    var caseDesc = GetCaseDesc(caseTypes, i, diagnostics, declaringNode, "value", hasPartialConstructorDefinition: false);
                     cases.Add(caseDesc);
                 }
             }
@@ -271,7 +319,13 @@ namespace UnionTypes.Toolkit.Generators
         /// <summary>
         /// Builds a <see cref="CaseDesc"/> for the case type at the given index in the list of case types.
         /// </summary>
-        private CaseDesc GetCaseDesc(IReadOnlyList<ITypeSymbol> caseTypes, int caseIndex, List<Diagnostic> diagnostics, SyntaxNode caseDeclaration)
+        private CaseDesc GetCaseDesc(
+            IReadOnlyList<ITypeSymbol> caseTypes, 
+            int caseIndex, 
+            List<Diagnostic> diagnostics, 
+            SyntaxNode caseDeclaration, 
+            string constructorParameterName,
+            bool hasPartialConstructorDefinition)
         {
             var type = caseTypes[caseIndex];
             var nnType = type.GetNonNullableType();
@@ -297,7 +351,14 @@ namespace UnionTypes.Toolkit.Generators
 
             var accessibility = GetMemberAccessibilityForType(type);
 
-            return new CaseDesc(typeDesc, nonDisjointCases, accessibility);
+            return new CaseDesc(
+                typeDesc, 
+                nonDisjointCases,
+                memberAccessibility: accessibility,
+                constructorAccessibility: accessibility,  // use general accessiblity for now, this seems to not generate errors
+                constructorParameterName: constructorParameterName,
+                hasPartialConstructorDefinition: hasPartialConstructorDefinition
+                );
         }
 
         /// <summary>
@@ -573,19 +634,19 @@ namespace UnionTypes.Toolkit.Generators
 
         private static StorageKind GetStorageOverride(ITypeSymbol type, SyntaxNode caseDeclaration)
         {
-            if (ContainsInTrivia(caseDeclaration, "box"))
+            if (caseDeclaration.HasCommentProperty("box"))
             {
                 return StorageKind.Box;               
             }
-            else if (ContainsInTrivia(caseDeclaration, "decompose"))
+            else if (caseDeclaration.HasCommentProperty("decompose"))
             {
                 return StorageKind.Decompose;
             }
-            else if (ContainsInTrivia(caseDeclaration, "isolate"))
+            else if (caseDeclaration.HasCommentProperty("isolate"))
             {
                 return StorageKind.Isolate;               
             }
-            else if (ContainsInTrivia(caseDeclaration, "overlap"))
+            else if (caseDeclaration.HasCommentProperty("overlap"))
             {
                 return StorageKind.Overlap;                
             }
@@ -1024,7 +1085,8 @@ namespace UnionTypes.Toolkit.Generators
         }
 
         /// <summary>
-        /// Gets the accessibility as C# text.
+        /// typeAets the accessibility as C# text.
+        /// var constructorAccessibility = GetMemberAccessibilityForType()
         /// </summary>
         private static string GetAccessibility(Accessibility acc)
         {
@@ -1111,108 +1173,6 @@ namespace UnionTypes.Toolkit.Generators
             }
 
             return ns.Name;
-        }
-
-        private static bool ContainsInTrivia(ISymbol symbol, string text)
-        {
-            return GetDeclarationNodes(symbol).Any(d => ContainsInTrivia(d, text));
-        }
-
-        private static bool ContainsInTrivia(SyntaxNode node, string text)
-        {
-            var commentTrivia = node.GetLeadingTrivia().Where(t => t.IsKind(SyntaxKind.SingleLineCommentTrivia) || t.IsKind(SyntaxKind.MultiLineCommentTrivia)).ToArray();
-            return commentTrivia.Any(t => t.ToString().Contains(text));
-        }
-
-        private static bool TryGetCommentProperty(SyntaxNode node, string propertyName, out string? value)
-        {
-            value = null;
-            var commentTrivia = node.GetLeadingTrivia().Where(t => t.IsKind(SyntaxKind.SingleLineCommentTrivia) || t.IsKind(SyntaxKind.MultiLineCommentTrivia)).ToArray();
-            foreach (var trivia in commentTrivia)
-            {
-                var text = trivia.ToString();
-                var prefix = "@" + propertyName;
-                var startIndex = text.IndexOf(prefix);
-                if (startIndex >= 0)
-                {
-                    var endOfPrefix = startIndex + prefix.Length;
-
-                    if (endOfPrefix < text.Length && text[endOfPrefix] == '=')
-                    {
-                        startIndex = endOfPrefix + 1;
-                        var endIndex = text.IndexOfAny(new[] { ' ', '\t', '\r', '\n' }, startIndex);
-                        if (endIndex < 0)
-                            endIndex = text.Length;
-                        value = text.Substring(startIndex, endIndex - startIndex);
-                        return true;
-                    }
-                    else if (endOfPrefix == text.Length 
-                        || text.IndexOfAny(new[] { ' ', '\t', '\r', '\n' }, endOfPrefix) >= endOfPrefix)
-                    {
-                        value = "true";
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        private static bool TryGetCommentProperty<T>(SyntaxNode node, string propertyName, out T? value)
-        {
-            value = default;
-            if (TryGetCommentProperty(node, propertyName, out var strValue))
-            {
-                try
-                {
-                    value = (T)Convert.ChangeType(strValue, typeof(T));
-                    return true;
-                }
-                catch
-                {
-                    // ignore conversion errors and just return false
-                }
-            }
-            return false;
-        }
-
-        private static bool TryGetCommentProperty(ISymbol symbol, string propertyName, out string? value)
-        {
-            value = null;
-            foreach (var node in GetDeclarationNodes(symbol))
-            {
-                if (TryGetCommentProperty(node, propertyName, out value))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private static bool TryGetCommentProperty<T>(ISymbol symbol, string propertyName, out T? value)
-        {
-            value = default;
-            foreach (var node in GetDeclarationNodes(symbol))
-            {
-                if (TryGetCommentProperty(node, propertyName, out value))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private static IEnumerable<SyntaxNode> GetDeclarationNodes(ISymbol symbol)
-        {
-            foreach (var location in symbol.Locations.Where(loc => loc.IsInSource))
-            {
-                if (location.SourceTree is SyntaxTree sourceTree
-                    && sourceTree.GetRoot() is SyntaxNode root)
-                {
-                    var declaration = root.FindNode(location.SourceSpan);
-                    if (declaration != null)
-                        yield return declaration;
-                }
-            }
         }
 
         private static void ReportUnsupportedCaseTypes(ITypeSymbol type, List<Diagnostic> diagnostics, SyntaxNode? caseDeclaration)

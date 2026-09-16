@@ -18,6 +18,28 @@ public class CustomUnionSourceGeneratorTests
     {
         TestGenerator(
             """
+            // @union
+            public partial struct MyUnion
+            {
+                public partial MyUnion(int value);
+                public partial MyUnion(float value);
+            }
+            """,
+            generatedText =>
+            {
+                // prove that contents of the two decomposable cases got overlapped into the overlapped field
+                Assert.IsTrue(HasOverlappedField(generatedText));
+                Assert.IsTrue(HasOverlappedCaseField(generatedText, 1, "int"));
+                Assert.IsTrue(HasOverlappedCaseField(generatedText, 2, "float"));
+                Assert.IsFalse(HasValueFields(generatedText)); // no value fields
+            });
+    }
+
+    [TestMethod]
+    public void TestCaseMethod_BackwardCompat()
+    {
+        TestGenerator(
+            """
             public partial struct MyUnion
             {
                 partial void Cases(int case1, float case2);
@@ -40,9 +62,11 @@ public class CustomUnionSourceGeneratorTests
         // this can only happen if the record struct can be trusted (e.g. is defined in the same assembly as the union), otherwise it is not safe to overlap them.
         TestGenerator(
             """
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(A case1, B case2);
+                public partial MyUnion(A value);
+                public partial MyUnion(B value);
             }
 
             public record struct A(int X);
@@ -64,9 +88,11 @@ public class CustomUnionSourceGeneratorTests
         // this can only happen if the struct can be trusted (e.g. is defined in the same assembly as the union), otherwise it is not safe to overlap them.
         TestGenerator(
             """
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(A case1, B case2);
+                public partial MyUnion(A value);
+                public partial MyUnion(B value);
             }
 
             public struct A { public int X { get; init; }}
@@ -87,9 +113,11 @@ public class CustomUnionSourceGeneratorTests
         // value tuples (structs) can be overlapped if they have only overlappable members (e.g. no reference types)
         TestGenerator(
             """
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases((int X, float Y) case1, (float X, int Y) case2);
+                public partial MyUnion((int X, float Y) value);
+                public partial MyUnion((float X, int Y) value);
             }
             """,
             generatedText =>
@@ -107,9 +135,11 @@ public class CustomUnionSourceGeneratorTests
         // numeric enums can be overlapped because they are represented as a numeric primitive
         TestGenerator(
             """
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(E case1, F case2);
+                public partial MyUnion(E value);
+                public partial MyUnion(F value);
             }
 
             public enum E { A, B, C }
@@ -130,9 +160,12 @@ public class CustomUnionSourceGeneratorTests
         // record structs that cannot be overlapped (because they have reference type members) can still be decomposed into their primitive members, of which some may be overlapped.
         TestGenerator(
             """
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(A case1, B case2, C case3);
+                public partial MyUnion(A value);
+                public partial MyUnion(B value);
+                public partial MyUnion(C value);
             }
 
             public record struct A(int Value1, string Value2);
@@ -156,9 +189,11 @@ public class CustomUnionSourceGeneratorTests
         // tuples with non-overlappable members cannot be overlapped, but can be decomposed into their members, some of which may be overlapped.
         TestGenerator(
             """
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases((int X, string Y) case1, (string X, float Y) case2);
+                public partial MyUnion((int X, string Y) value);
+                public partial MyUnion((string X, float Y) value);
             }
             """,
             generatedText =>
@@ -176,9 +211,11 @@ public class CustomUnionSourceGeneratorTests
     {
         TestGenerator(
             """
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(A case1, (float X, int Y, string Z) case2);
+                public partial MyUnion(A value);
+                public partial MyUnion((float X, int Y, string Z) value);
             }
 
             public record struct A(int Value1, float Value2, string Value3);
@@ -200,9 +237,11 @@ public class CustomUnionSourceGeneratorTests
         // Each overlappable decomposed member is stored in the same overlapped field as a tuple of the overlappable members.
         TestGenerator(
             """
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(A case1, B case2);
+                public partial MyUnion(A value);
+                public partial MyUnion(B value);
             }
 
             public record struct A(int Value1, (float, string) Value2);
@@ -228,13 +267,13 @@ public class CustomUnionSourceGeneratorTests
             """
             using System;
 
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(
-                    int case1, 
-                    // @overlap
-                    DateOnly case2
-                    );
+                public partial MyUnion(int value);
+
+                // @overlap
+                public partial MyUnion(DateOnly value);
             }
             """,
             generatedText =>
@@ -270,14 +309,14 @@ public class CustomUnionSourceGeneratorTests
             """
             using System;
 
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(
-                    // @box
-                    int case1, 
-                    // @box
-                    (int, float) case2
-                    );
+                // @box
+                public partial MyUnion(int value);
+
+                // @box
+                public partial MyUnion((int, float) value);
             }
             """,
             generatedText =>
@@ -295,15 +334,16 @@ public class CustomUnionSourceGeneratorTests
             """
             using System;
 
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(
-                    int case1, 
-                    // @isolate
-                    float case2,
-                    // @isolate  -- but will store in object field since it is a reference type
-                    string case3
-                    );
+                public partial MyUnion(int value);
+
+                // @isolate
+                public partial MyUnion(float value);
+
+                // @isolate  
+                public partial MyUnion(string value);  // but will store in object field since it is a reference type
             }
             """,
             generatedText =>
@@ -324,14 +364,14 @@ public class CustomUnionSourceGeneratorTests
             public record struct A(int X, float Y);
             public record struct B { public int X { get; init; } public float Y { get; init; } }
 
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(
-                    // @decompose
-                    A case1, 
-                    // @decompose
-                    B case2
-                    );
+                // @decompose
+                public partial MyUnion(A case1);
+
+                // @decompose
+                public partial MyUnion(B case2);
             }
             """,
             generatedText =>
@@ -350,13 +390,12 @@ public class CustomUnionSourceGeneratorTests
             public interface IA { }
             public interface IB { }
 
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(
-                    IA case1, 
-                    IB case2, 
-                    int case3   // to keep if from switching to box layout
-                    );
+                public partial MyUnion(IA case1);
+                public partial MyUnion(IB case2);
+                public partial MyUnion(int case3);   // case added to keep generator from switching to boxed layout
             }
             """,
             generatedText =>
@@ -377,9 +416,12 @@ public class CustomUnionSourceGeneratorTests
             public struct B : IA { }
             public struct C { }
 
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(IA case1, B case2, C case3);
+                public partial MyUnion(IA value);
+                public partial MyUnion(B value);
+                public partial MyUnion(C value);
             }
             """,
             generatedText =>
@@ -403,9 +445,13 @@ public class CustomUnionSourceGeneratorTests
             public class C { }           // not known to implement IA, but unsealed
             public sealed class D { }    // known to not implement IA
 
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(IA case1, B case2, C case3, D case4);
+                public partial MyUnion(IA value);
+                public partial MyUnion(B value);
+                public partial MyUnion(C value);
+                public partial MyUnion(D value);
             }
             """,
             generatedText =>
@@ -425,9 +471,11 @@ public class CustomUnionSourceGeneratorTests
     {
         TestGenerator(
             """
+            // @union
             public partial struct MyUnion<T>
             {
-                partial void Cases(int case1, T case2);
+                public partial MyUnion(int case1);
+                public partial MyUnion(T case2);
             }
             """,
             generatedText =>
@@ -451,14 +499,13 @@ public class CustomUnionSourceGeneratorTests
             public class B : A { }
             public class C : B { }
 
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(
-                    A case1, 
-                    B case2, 
-                    C case3, 
-                    int case4   // to keep it from switching to box layout
-                    );
+                public partial MyUnion(A value);
+                public partial MyUnion(B value);
+                public partial MyUnion(C value);
+                public partial MyUnion(int value); // case added to keep generator from switching to boxed layout
             }
             """,
             generatedText =>
@@ -482,9 +529,11 @@ public class CustomUnionSourceGeneratorTests
             """
             namespace MyNamespace
             {
+                // @union
                 public partial struct MyUnion
                 {
-                    partial void Cases(int case1, string case2);
+                    public partial MyUnion(int case1);
+                    public partial MyUnion(string case2);
                 }
             }
             """,
@@ -504,9 +553,11 @@ public class CustomUnionSourceGeneratorTests
             using System.Collections.Generic;
             using X=System.Collections.Generic.List<int>;
     
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(int case1, string case2);
+                public partial MyUnion(int value);
+                public partial MyUnion(string value);
             }
             """,
             generatedText => 
@@ -528,9 +579,11 @@ public class CustomUnionSourceGeneratorTests
                 public struct B { public string Y; }
             }
 
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(OtherNamespace.A case1, OtherNamespace.B case2);
+                public partial MyUnion(OtherNamespace.A value);
+                public partial MyUnion(OtherNamespace.B value);
             }
             """,
             generatedText =>
@@ -551,9 +604,11 @@ public class CustomUnionSourceGeneratorTests
                 public struct B { public string Y; }
             }
 
+            // @union
             public partial struct MyUnion
             {
-                partial void Cases(OtherType.A case1, OtherType.B case2);
+                public partial MyUnion(OtherType.A value);
+                public partial MyUnion(OtherType.B value);
             }
             """,
             generatedText =>
@@ -564,13 +619,16 @@ public class CustomUnionSourceGeneratorTests
 
 
     [TestMethod]
-    public void TestInternalUnion()
+    public void TestInternalUnion_PublicCases()
     {
+        // explicit accessibilty
         TestGenerator(
             """
+            // @union
             internal partial struct MyUnion
             {
-                partial void Cases(int case1, string case2);
+                public partial MyUnion(int value);
+                public partial MyUnion(string value);
             }
             """,
             generatedText => 
@@ -578,11 +636,14 @@ public class CustomUnionSourceGeneratorTests
                 Assert.IsTrue(generatedText.Contains("internal partial struct MyUnion"));
             });
 
+        // unspecifed accessibility, should default to internal
         TestGenerator(
             """
+            // @union
             partial struct MyUnion
             {
-                partial void Cases(int case1, string case2);
+                public partial MyUnion(int value);
+                public partial MyUnion(string value);
             }
             """,
             generatedText => 
@@ -592,16 +653,39 @@ public class CustomUnionSourceGeneratorTests
     }
 
     [TestMethod]
-    public void TestInternalUnion_WithInternalCases()
+    public void TestInternalUnion_InternalCases()
     {
+        // internal union with public constructors
         TestGenerator(
             """
             internal struct A { }
             internal struct B { }
 
+            // @union
             internal partial struct MyUnion
             {
-                partial void Cases(A case1, B case2);
+                public partial MyUnion(A value);
+                public partial MyUnion(B value);
+            }
+            """,
+            generatedText => 
+            {
+                Assert.IsTrue(generatedText.Contains("internal partial struct MyUnion"));
+                Assert.IsTrue(generatedText.Contains("internal bool TryGetValue([NotNullWhen(true)] out global::A value)"));
+                Assert.IsTrue(generatedText.Contains("internal bool TryGetValue([NotNullWhen(true)] out global::B value)"));
+            });
+
+        // internal union with internal constructors
+        TestGenerator(
+            """
+            internal struct A { }
+            internal struct B { }
+
+            // @union
+            internal partial struct MyUnion
+            {
+                internal partial MyUnion(A value);
+                internal partial MyUnion(B value);
             }
             """,
             generatedText => 
@@ -617,9 +701,11 @@ public class CustomUnionSourceGeneratorTests
     {
         TestGenerator(
             """
-            internal partial struct MyUnion
+            // @union
+            public partial struct MyUnion
             {
-                partial void Cases(int? case1, float? case2);
+                public partial MyUnion(int? value);
+                public partial MyUnion(float? value);
             }
             """,
             generatedText =>
@@ -635,9 +721,11 @@ public class CustomUnionSourceGeneratorTests
     {
         TestGenerator(
             """
-            internal partial struct MyUnion
+            // @union
+            public partial struct MyUnion
             {
-                partial void Cases(System.Nullable<int> case1, System.Nullable<float> case2);
+                public partial MyUnion(System.Nullable<int> value);
+                public partial MyUnion(System.Nullable<float> value);
             }
             """,
             generatedText =>
@@ -656,9 +744,11 @@ public class CustomUnionSourceGeneratorTests
             public class A { }
             public class B { }
 
-            internal partial struct MyUnion
+            // @union
+            public partial struct MyUnion
             {
-                partial void Cases(A? case1, B? case2);
+                public partial MyUnion(A? value);
+                public partial MyUnion(B? value);
             }
             """,
             generatedText =>
@@ -676,9 +766,11 @@ public class CustomUnionSourceGeneratorTests
             public record struct A (int X, float Y);
             public record struct B { public required int X { get; init; } public required float Y { get; init; } }
 
-            internal partial struct MyUnion
+            // @union
+            public partial struct MyUnion
             {
-                partial void Cases(A? case1, B? case2);
+                public partial MyUnion(A? value);
+                public partial MyUnion(B? value);
             }
             """,
             generatedText =>
@@ -698,9 +790,11 @@ public class CustomUnionSourceGeneratorTests
             public record struct A (int X, string Y);
             public record struct B { public required int X { get; init; } public required string Y { get; init; } }
 
-            internal partial struct MyUnion
+            // @union
+            public partial struct MyUnion
             {
-                partial void Cases(A? case1, B? case2);
+                public partial MyUnion(A? value);
+                public partial MyUnion(B? value);
             }
             """,
             generatedText =>
@@ -720,9 +814,11 @@ public class CustomUnionSourceGeneratorTests
             public record struct A (int? X, string? Y);
             public record struct B { public int? X { get; init; } public string? Y { get; init; } public float? Z { get; init; } }
 
-            internal partial struct MyUnion
+            // @union
+            public partial struct MyUnion
             {
-                partial void Cases(A case1, B case2);
+                public partial MyUnion(A value);
+                public partial MyUnion(B value);
             }
             """,
             generatedText =>
@@ -740,15 +836,14 @@ public class CustomUnionSourceGeneratorTests
         // prove that unions with cases or case members that have unsupported types (e.g. pointers, spans, etc.) produce diagnostics.
         TestGenerator(
             """
-            internal partial struct MyUnion
+            // @union
+            public partial struct MyUnion
             {
-                partial void Cases(
-                    <<Span<int> case1>>, 
-                    <<ReadOnlySpan<float> case2>>,
-                    <<int* case3>>,
-                    <<A case4>>,
-                    <<B case5>>
-                    );
+                <<public partial MyUnion(Span<int> value);>>
+                <<public partial MyUnion(ReadOnlySpan<float> value);>>
+                <<public partial MyUnion(int* value);>>
+                <<public partial MyUnion(A value);>>
+                <<public partial MyUnion(B value);>>
             }
 
             public ref struct A { public int X; }
@@ -763,15 +858,16 @@ public class CustomUnionSourceGeneratorTests
     {
         TestGenerator(
             """
-            internal partial struct MyUnion
+            // @union
+            public partial struct MyUnion
             {
-                partial void Cases(
-                    int case1, 
-                    // @overlap
-                    <<string case2>>,
-                    // @overlap
-                    <<AB case3>>
-                    );
+                public partial MyUnion(int value);
+
+                // @overlap
+                <<public partial MyUnion(string value);>>
+
+                // @overlap
+                <<public partial MyUnion(AB value);>>
             }
 
             struct AB { public int X; public string Y; }
@@ -785,22 +881,24 @@ public class CustomUnionSourceGeneratorTests
     {
         TestGenerator(
             """
-            internal partial struct MyUnion
+            // @union
+            public partial struct MyUnion
             {
-                partial void Cases(
-                    // @decompose
-                    <<int case1>>,       // no members to decompose
-                    // @decompose,
-                    <<string case2>>,    // not a struct
-                    // @decompose
-                    A case3,             // okay?: has non-public field/properties but 'trust-me bro'                    
-                    // @decompose        // okay
-                    B case4
-                    );
+                // @decompose
+                <<public partial MyUnion(int value);>>  // cannot decompose int
+
+                // @decompose
+                <<public partial MyUnion(string value);>>   // cannot decompose string
+
+                // @decompose
+                public partial MyUnion(A value);        // okay, if you say so, but z is lost
+
+                // @decompose
+                public partial MyUnion(B value);        // okay, was going to anyway
             }
 
-            struct A { public int X; public string Y; internal int z; }
-            struct B { public int X { get; set; } public string Y { get; init; } }
+            public struct A { public int X; public string Y; internal int z; }
+            public struct B { public int X { get; set; } public string Y { get; init; } }
             """,
             ["UT0003", "UT0003"]
             );
@@ -812,13 +910,12 @@ public class CustomUnionSourceGeneratorTests
         // if all cases prefer box layout, then the union will be boxed layout.
         TestGenerator(
             """
-            internal partial struct MyUnion
+            // @union
+            public partial struct MyUnion
             {
-                partial void Cases(
-                    string case1,
-                    A case2,
-                    B case3
-                    );
+                public partial MyUnion(string value);
+                public partial MyUnion(A value);
+                public partial MyUnion(B value);
             }
 
             record A(int X);
@@ -839,15 +936,16 @@ public class CustomUnionSourceGeneratorTests
         // if all cases prefer box layout, then the union will be boxed layout.
         TestGenerator(
             """
-            internal partial struct MyUnion
+            // @union
+            public partial struct MyUnion
             {
-                partial void Cases(
-                    string case1,
-                    // @box
-                    int case2,
-                    // @box
-                    A case3
-                    );
+                public partial MyUnion(string case1);
+
+                // @box
+                public partial MyUnion(int case2);
+                
+                // @box
+                public partial MyUnion(A case3);
             }
 
             record struct A(int X);
@@ -966,7 +1064,7 @@ public class CustomUnionSourceGeneratorTests
 
         if (expectedDiagnosticCodes != null && markedRanges.Length != expectedDiagnosticCodes?.Length)
         {
-            Assert.Fail($"there were {expectedDiagnosticCodes?.Length} expected diagnostics, but only {markedRanges.Length} marked ranges in source text for the test.");
+            Assert.Fail($"there were {expectedDiagnosticCodes?.Length} expected diagnostics, but {markedRanges.Length} marked ranges in source text for the test.");
         }
         else if (actualDiagnostics.Length != markedRanges.Length)
         {
