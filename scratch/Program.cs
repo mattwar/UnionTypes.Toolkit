@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 
-var u = new MyUnion(new A(1, 2));
+MyUnion u = new A(1, 2);
 
 Console.WriteLine($"size: {Unsafe.SizeOf<MyUnion>()}");
 
@@ -16,14 +16,13 @@ if (u is IBar)
 if (u is int)
    Console.WriteLine("I'm an int");
 
+// @union
 public partial struct MyUnion
 {
-    partial void Cases(
-        int x,
-        IBar bar,
-        IFoo foo,
-        byte y
-        );
+   public partial MyUnion(int value);
+   public partial MyUnion(IBar bar);
+   public partial MyUnion(IFoo foo);
+   public partial MyUnion(byte y);
 }
 
 public interface IFoo {}
