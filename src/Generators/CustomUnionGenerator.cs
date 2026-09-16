@@ -166,14 +166,16 @@ namespace UnionTypes.Toolkit.Generators
             void WriteConstructor(CaseLayout caseLayout)
             {
                 var caseType = caseLayout.Case.Type;
-                _writer.WriteLine($"public {layout.Union.SimpleName}({caseType.TypeName} value)");
+                var parameterName = caseLayout.Case.ConstructorParameterName ?? "value";
+                var partialMod = caseLayout.Case.HasPartialConstructorDefinition ? "partial " : "";
+                _writer.WriteLine($"{caseLayout.Case.ConstructorAccessibility} {partialMod}{layout.Union.SimpleName}({caseType.TypeName} {parameterName})");
                 _writer.WriteBraceNested(() =>
                 {
                     if (caseType.IsReference
                         || caseType.MightBeNullable)
                     {
                         // null values become equivalent of default for the struct
-                        _writer.WriteLine("if (value is {} v)");
+                        _writer.WriteLine($"if ({parameterName} is {{}} v)");
                         _writer.WriteBraceNested(() =>
                         {
                             WriteBody("v");                           
@@ -181,10 +183,10 @@ namespace UnionTypes.Toolkit.Generators
                     }
                     else 
                     {
-                        WriteBody("value");
+                        WriteBody(parameterName);
                     }
 
-                    void WriteBody(string valueName)
+                    void WriteBody(string parameterName)
                     {                       
                         if (layout.TagField != null)
                         {
@@ -193,12 +195,12 @@ namespace UnionTypes.Toolkit.Generators
 
                         if (caseLayout.IsDecomposed)
                         {
-                            Decompose(caseLayout, valueName);
+                            Decompose(caseLayout, parameterName);
                         }
                         else if (caseLayout.Field != null)
                         {
                             WriteFieldReference(caseLayout.Field);
-                            _writer.WriteLine($" = {valueName};");
+                            _writer.WriteLine($" = {parameterName};");
                         }
                         else
                         {
@@ -568,7 +570,7 @@ namespace UnionTypes.Toolkit.Generators
 
             void WriteCaseTypeGetValue(CaseLayout caseLayout)
             {
-                _writer.WriteLine($"{caseLayout.Case.Accessibility} bool TryGetValue([NotNullWhen(true)] out {caseLayout.Case.Type.TypeName} value)");
+                _writer.WriteLine($"{caseLayout.Case.MemberAccessibility} bool TryGetValue([NotNullWhen(true)] out {caseLayout.Case.Type.TypeName} value)");
                 _writer.WriteBraceNested(() =>
                 {
                     if (caseLayout.Case.NonDisjointCases.Count > 0)
@@ -1242,40 +1244,54 @@ namespace UnionTypes.Toolkit.Generators
         /// </summary>
         public IReadOnlyList<int> NonDisjointCases { get; }
 
-        public string Accessibility { get; }
+        /// <summary>
+        /// The accessibility for members generated for this type
+        /// </summary>
+        public string MemberAccessibility { get; }
 
         /// <summary>
         /// If true, a record struct type for the case will be generated from the members as a nested type within the union type.
         /// </summary>
         public bool GenerateType { get; }
 
-        private CaseDesc(
+        /// <summary>
+        /// The accessibility of the constructor (may be different than the general member accessibility)
+        /// </summary>
+        public string ConstructorAccessibility { get; }
+
+        /// <summary>
+        /// The name of the constructor parameter associated with this case
+        /// </summary>
+        public string ConstructorParameterName { get; }
+
+        /// <summary>
+        /// True if the constructor had a partial definition
+        /// </summary>
+        public bool HasPartialConstructorDefinition { get; }
+
+        public CaseDesc(
             TypeDesc type,
-            IReadOnlyList<int>? nonDisjointCases,
-            bool generateType,
-            string accessibility)
+            IReadOnlyList<int>? nonDisjointCases = null,
+            string memberAccessibility = "public",
+            bool generateType = false,
+            string constructorAccessibility = "public",
+            string constructorParameterName = "value",
+            bool hasPartialConstructorDefinition = false)
         {
             this.Type = type;
             this.NonDisjointCases = nonDisjointCases ?? Array.Empty<int>();
+            this.MemberAccessibility = memberAccessibility;
             this.GenerateType = generateType;
-            this.Accessibility = accessibility;
-        }
-
-        public CaseDesc(TypeDesc type, bool generateType, string accessibility = "public")
-            : this(type, null, generateType, accessibility)
-        {
-        }
-
-        public CaseDesc(TypeDesc type, IReadOnlyList<int>? nonDisjointCases = null, string accessibility = "public")
-            : this(type, nonDisjointCases, false, accessibility)
-        {
+            this.ConstructorAccessibility = constructorAccessibility;
+            this.ConstructorParameterName = constructorParameterName;
+            this.HasPartialConstructorDefinition = hasPartialConstructorDefinition;
         }
 
         public bool Equals(CaseDesc other)
         {
             if (this.Type.Equals(other.Type)
                 && this.GenerateType == other.GenerateType
-                && this.Accessibility == other.Accessibility)
+                && this.MemberAccessibility == other.MemberAccessibility)
             {
                 if (this.NonDisjointCases.Count != other.NonDisjointCases.Count)
                     return false;
