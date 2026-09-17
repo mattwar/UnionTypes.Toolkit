@@ -1,12 +1,7 @@
 using System;
-using System.Collections.Generic;
-using System.Collections.Immutable;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace UnionTypes.Toolkit.Generators;
 
@@ -34,35 +29,47 @@ public static class CommentPropertyExtensions
     public static bool TryGetCommentProperty(this SyntaxNode node, string propertyName, out string? value)
     {
         value = null;
-        var commentTrivia = node.GetLeadingTrivia().Where(t => t.IsKind(SyntaxKind.SingleLineCommentTrivia) || t.IsKind(SyntaxKind.MultiLineCommentTrivia)).ToArray();
-        foreach (var trivia in commentTrivia)
+        
+        foreach (var trivia in node.GetLeadingTrivia())
         {
-            var text = trivia.ToString();
-            var prefix = "@" + propertyName;
-            var startIndex = text.IndexOf(prefix);
-            if (startIndex >= 0)
-            {
-                var endOfPrefix = startIndex + prefix.Length;
+            if (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia)
+                || trivia.IsKind(SyntaxKind.MultiLineCommentTrivia))
+            {                
+                var text = trivia.ToString();
+                var prefix = "@" + propertyName;
+                var startIndex = text.IndexOf(prefix);
+                if (startIndex >= 0)
+                {
+                    var endOfPrefix = startIndex + prefix.Length;
 
-                if (endOfPrefix < text.Length && text[endOfPrefix] == '=')
-                {
-                    startIndex = endOfPrefix + 1;
-                    var endIndex = text.IndexOfAny(new[] { ' ', '\t', '\r', '\n' }, startIndex);
-                    if (endIndex < 0)
-                        endIndex = text.Length;
-                    value = text.Substring(startIndex, endIndex - startIndex);
-                    return true;
+                    if (endOfPrefix < text.Length && text[endOfPrefix] == '=')
+                    {
+                        // determine value after =
+                        startIndex = endOfPrefix + 1;
+                        var endIndex = text.IndexOfAny(_commentPropertyEndingTokens, startIndex);
+                        if (endIndex < 0)
+                            endIndex = text.Length;
+                        value = text.Substring(startIndex, endIndex - startIndex);
+                        return true;
+                    }
+                    else if (endOfPrefix == text.Length 
+                        || text.IndexOfAny(_commentPropertyEndingTokens, endOfPrefix) >= endOfPrefix)
+                    {
+                        // property without a value is considered to be "true"
+                        value = "true";
+                        return true;
+                    }
                 }
-                else if (endOfPrefix == text.Length 
-                    || text.IndexOfAny(new[] { ' ', '\t', '\r', '\n' }, endOfPrefix) >= endOfPrefix)
-                {
-                    value = "true";
-                    return true;
-                }
-            }
+            }              
         }
+
         return false;
     }
+
+    /// <summary>
+    /// Any of these characters denotes the end of a comment property
+    /// </summary>
+    private static readonly char[] _commentPropertyEndingTokens = new[] { ' ', '\t', '\r', '\n', ',', ';', '|', ':', '(', ')', '[', ']', '{', '}' };
 
     /// <summary>
     /// Returns true if the comment property exists in the node's leading trivia, and outputs properties assigned value if present and convertible to the type T.
