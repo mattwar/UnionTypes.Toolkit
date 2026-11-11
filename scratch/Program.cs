@@ -1,32 +1,51 @@
 using System.Runtime.CompilerServices;
 
-MyUnion u = new A(1, 2);
+DisplayUnion(default);
+DisplayUnion(123);
+DisplayUnion("Hello");
 
-Console.WriteLine($"size: {Unsafe.SizeOf<MyUnion>()}");
+// this will succeed because type parameter case did not generate null protection,
+// because type of case is only known at runtime and runtime cannot know about nullability of type parameters
+var y = new Union<string, int>((string)null!);
 
-if (u is byte)
-   Console.WriteLine("I'm a byte");
+// this will throw because MyUnion does not allow null for string
+//var x = new MyUnion((string)null!);
 
-if (u is IFoo)
-   Console.WriteLine("I'm an IFoo");
 
-if (u is IBar)
-   Console.WriteLine("I'm an IBar");
+void DisplayUnion(MyUnion u)
+{
+   Console.WriteLine($"HasValue: {u.HasValue}");
+   Console.WriteLine($"Value: {u.Value}");
 
-if (u is int)
-   Console.WriteLine("I'm an int");
+   switch (u)
+   {
+      case int intVal:
+         Console.WriteLine($"is int: {intVal}");
+         break;
+      case string strVal:
+         Console.WriteLine($"is string: {strVal}");
+         break;
+      case null:
+         Console.WriteLine("is null");
+         break;
+   }
+
+   Console.WriteLine();
+}
 
 // @union
 public partial struct MyUnion
 {
    public partial MyUnion(int value);
-   public partial MyUnion(IBar bar);
-   public partial MyUnion(IFoo foo);
-   public partial MyUnion(byte y);
+   public partial MyUnion(string value);
+   private static MyUnion Default { get; } = -999;
 }
 
-public interface IFoo {}
-public interface IBar {}
-public record struct A(int X, byte Y) : IFoo;
 
-
+// @union
+public partial struct Union<T1, T2>
+{
+   public partial Union(T1 value);
+   public partial Union(T2 value);
+   public partial Union(float value);
+}

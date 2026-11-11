@@ -266,6 +266,34 @@ namespace Tests
         }
 
 
+        [TestMethod]
+        public void TestDefaultProperty()
+        {
+            // prove that structs will be overlapped, if at least two cases request overlap
+            TestGenerate(
+                """
+                public partial struct TestUnion
+                {
+                    public static TestUnion Default { get; } = new TestUnion("Default");
+                }
+                """,
+                new UnionInfo(
+                    "TestUnion",
+                    [
+                        new CaseDesc(TypeDesc.String),
+                        new CaseDesc(TypeDesc.Int32),
+                    ],
+                    defaultPropertyName: "Default"
+                    ),
+                generatedText =>
+                {
+                    Assert.IsTrue(generatedText.Contains("_kind"));                    
+                    Assert.IsFalse(generatedText.Contains("_overlapped"));
+                }
+                );
+        }
+
+
         private void TestGenerate(UnionInfo union, Action<string>? generatedTextValidator = null)
         {
             TestGenerate([], union, generatedTextValidator);

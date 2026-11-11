@@ -59,10 +59,10 @@ public partial struct TagLikeUnion : System.Runtime.CompilerServices.IUnion
         {
             1 => this.GetCase1(),
             2 => this.GetCase2(),
-            _ => null
+            _ => null!
         };
 
-    public bool HasValue => _kind != 0;
+    public bool HasValue => _kind != 3;
 
     public bool TryGetValue([NotNullWhen(true)] out Open value)
     {

@@ -10,7 +10,7 @@ It may include additional generators in the future.
 
 ## Declaring a Non-Boxing Custom Union Type
 
-Declare a partial struct type with `@Union` in its leading comments and a partial constructor for each case type for the generator to implement.
+Declare a partial struct type with `@union` in its leading comments and a partial constructor for each case type for the generator to implement.
 
 The generator will layout the contents of the custom union so that the fields storing the different case types are overlapped with each other using the same memory space, if possible, or at least consume less space than simply having separate fields for each case type. No case value is boxed.
 

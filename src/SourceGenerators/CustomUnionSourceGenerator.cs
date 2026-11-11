@@ -67,6 +67,22 @@ namespace UnionTypes.Toolkit.Generators
         }
 
         /// <summary>
+        /// Returns the name of the static property that provides the default value of the union type, if it exists.
+        /// </summary>
+        private static string? GetDefaultValuePropertyName(INamedTypeSymbol symbol)
+        {
+            if (symbol.GetMembers().OfType<IPropertySymbol>().Any(prop =>
+                prop.IsStatic
+                && prop.Name == "Default"
+                && SymbolEqualityComparer.Default.Equals(prop.Type, symbol)))
+            {
+                return "Default";
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Gets the info that drives the code generation for the union type.
         /// </summary>
         public GenerationInfo? GetGenerationInfo(GeneratorSyntaxContext context, CancellationToken ct)
@@ -210,11 +226,13 @@ namespace UnionTypes.Toolkit.Generators
                 GetTypeCasesFromPartialConstructors(unionType, cases, diagnostics);
             }
 
+            var defaultValuePropertyName = GetDefaultValuePropertyName(unionType);
+
             if (cases.Count > 0)
             {
                 var fullName = GetTypeFullName(unionType);
 
-                // if all cases are storage as 'box' then use box layouted instead of tagged.                
+                // if all cases are storage as 'box' then use boxed layout instead of tagged.                
                 var layoutStyle = cases.All(c => c.Type.Storage == StorageKind.Box)
                     ? LayoutStyle.Boxed
                     : LayoutStyle.Tagged;
@@ -223,7 +241,8 @@ namespace UnionTypes.Toolkit.Generators
                     fullName,
                     cases,
                     layoutStyle,
-                    accessibility
+                    accessibility,
+                    defaultValuePropertyName
                     );
 
                 info = new GenerationInfo(namespaceName, usings, union, diagnostics);
@@ -1077,6 +1096,11 @@ namespace UnionTypes.Toolkit.Generators
                 {
                     return "public";
                 }
+            }
+            else if (symbol.TypeKind == CATypeKind.TypeParameter)
+            {
+                // cannot deduce otherwise
+                return "public";
             }
 
             // if type is not public then the generated member must not be declared public or suffer the wrath of C#.

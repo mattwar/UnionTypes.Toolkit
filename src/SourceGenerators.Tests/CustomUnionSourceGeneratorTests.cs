@@ -523,6 +523,27 @@ public class CustomUnionSourceGeneratorTests
     }
 
     [TestMethod]
+    public void TestGenericCases()
+    {
+        // subclasses are not disjoint because a value of a sub type can be stored as a case of the base type.
+
+        TestGenerator(
+            """
+            // @union
+            public partial struct MyUnion<T1, T2>
+            {
+                public partial MyUnion(T1 value);
+                public partial MyUnion(T2 value);
+            }
+            """,
+            generatedText =>
+            {
+                Assert.IsFalse(HasOverlappedField(generatedText));
+                Assert.IsTrue(HasValueFields(generatedText, "T1", "T2"));
+            });
+    }
+
+    [TestMethod]
     public void TestInNamespace()
     {
         TestGenerator(
@@ -955,6 +976,29 @@ public class CustomUnionSourceGeneratorTests
                 Assert.IsFalse(HasTagField(generatedText));
                 Assert.IsFalse(HasOverlappedField(generatedText));
                 Assert.IsTrue(HasValueFields(generatedText, "object?"));
+            }
+            );
+    }
+
+    [TestMethod]
+    public void TestDefaultProperty()
+    {
+        TestGenerator(
+            """
+            // @union
+            public partial struct MyUnion
+            {
+                public partial MyUnion(string value);
+                public partial MyUnion(int value);
+
+                public static MyUnion Default { get; } = new MyUnion("default");
+            }
+            """,
+            generatedText =>
+            {
+                Assert.IsTrue(HasTagField(generatedText));
+                Assert.IsFalse(HasOverlappedField(generatedText));
+                Assert.IsTrue(HasValueFields(generatedText, "object?", "int"));
             }
             );
     }
