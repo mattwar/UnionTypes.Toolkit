@@ -231,3 +231,52 @@ public partial struct MyUnion
 ```
 
 *You can choose this an alternative to using @isolate when you believe the metadata for a case type is incomplete and should not be overlapped or decomposed.*
+
+### Unitialized Default
+
+Because the union is a struct it can be unitialized.
+By default, an uninitialized union returns `null` as its value.
+This can be surprising when the cases do not otherwise allow for null, and the compiler does not warn you of this possiblity.
+
+The union generator allows you to determine the value that the union returns in its unitialized state.
+Declare a static property named `Default` that returns a populated union instance, and the union will use it's value as the value of the union when uninitialized.
+This property does not need to be public.
+
+```csharp
+
+public partial struct MyUnion
+{
+    public partial MyUnion(string value);
+    public partial MyUnion(int value);
+
+    public static MyUnion Default { get; } = 0;  // or any other value
+}
+```
+
+Ideally, this works best when you have a case type that itself has a reasonable and expected default, but it can you any value you choose.
+
+```csharp
+public partial struct Pet
+{
+    public partial MyUnion(Cat value);
+    public partial MyUnion(Dog value);
+
+    public static MyUnion Default { get; } = new Cat("Felix");
+}
+```
+
+The uninitialized state is a separate from the state a union is in when a case is expected to contain null. In this case a null assigned value will still return a null from the union.
+
+```csharp
+public partial struct Pet
+{
+    public partial MyUnion(Cat value);
+    public partial MyUnion(Dog? value);
+
+    public static MyUnion Default { get; } = new Cat("Felix");
+}
+
+Pet p = (Dog?)null;
+p.Value == null // still null
+```
+

@@ -46,10 +46,10 @@ public partial struct SimplePrimitivesUnion : System.Runtime.CompilerServices.IU
         {
             1 => this.GetCase1(),
             2 => this.GetCase2(),
-            _ => null
+            _ => null!
         };
 
-    public bool HasValue => _kind != 0;
+    public bool HasValue => _kind != 3;
 
     public bool TryGetValue([NotNullWhen(true)] out int value)
     {
