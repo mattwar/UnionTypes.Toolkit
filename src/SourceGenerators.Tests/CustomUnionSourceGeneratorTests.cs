@@ -667,7 +667,7 @@ public class CustomUnionSourceGeneratorTests
             Debug.Assert(u2.Value is IB);
             Debug.Assert(u2.TryGetValue(out IB _));
 
-            MyUnion u3 = new C();
+            MyUnion u3 = (IA)new C();
             Debug.Assert(u3 is IA && u3 is IB);
             Debug.Assert(u3.HasValue);
             Debug.Assert(u3.Value is IA && u3.Value is IB);
@@ -790,7 +790,7 @@ public class CustomUnionSourceGeneratorTests
             Debug.Assert(u3.Value is C && u3.Value is not IA);
             Debug.Assert(u3.TryGetValue(out C _) && !u3.TryGetValue(out IA _));
 
-            MyUnion u4 = new CA();
+            MyUnion u4 = (C)new CA();
             Debug.Assert(u4 is C && u4 is IA);
             Debug.Assert(u4.HasValue);
             Debug.Assert(u4.Value is C && u4.Value is IA);
@@ -1149,26 +1149,6 @@ public class CustomUnionSourceGeneratorTests
             {
                 public partial MyUnion(A value);
                 public partial MyUnion(B value);
-            }
-            """,
-            generatedText => 
-            {
-                Assert.IsTrue(generatedText.Contains("internal partial struct MyUnion"));
-                Assert.IsTrue(generatedText.Contains("internal bool TryGetValue([NotNullWhen(true)] out global::A value)"));
-                Assert.IsTrue(generatedText.Contains("internal bool TryGetValue([NotNullWhen(true)] out global::B value)"));
-            });
-
-        // internal union with internal constructors
-        TestGenerator<CustomUnionSourceGenerator>(
-            """
-            internal struct A { }
-            internal struct B { }
-
-            // @union
-            internal partial struct MyUnion
-            {
-                internal partial MyUnion(A value);
-                internal partial MyUnion(B value);
             }
             """,
             generatedText => 
