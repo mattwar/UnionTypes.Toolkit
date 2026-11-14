@@ -18,6 +18,9 @@ namespace UnionTypes.Toolkit.Generators
         private StringBuilder _builder = new StringBuilder();
         private string _lineStartIndentation = "";
         private const string _indent = "    ";
+#pragma warning disable RS1035
+        private static readonly string _newline = Environment.NewLine;
+#pragma warning restore RS1035
         private bool _isLineStart = true;
 
         /// <summary>
@@ -108,7 +111,7 @@ namespace UnionTypes.Toolkit.Generators
 
             if (_blocks.Count > 0)
             {
-                _builder.Append(string.Join(Environment.NewLine, _blocks));
+                _builder.Append(string.Join(_newline, _blocks));
             }
 
             _blocks = oldBlocks;

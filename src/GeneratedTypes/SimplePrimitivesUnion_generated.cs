@@ -49,7 +49,7 @@ public partial struct SimplePrimitivesUnion : System.Runtime.CompilerServices.IU
             _ => null!
         };
 
-    public bool HasValue => _kind != 3;
+    public bool HasValue => _kind != 0;
 
     public bool TryGetValue([NotNullWhen(true)] out int value)
     {
