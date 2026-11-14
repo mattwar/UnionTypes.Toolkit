@@ -65,8 +65,10 @@ public class CommentPropertyExtensionsTests
     public void TryGetCommentProperty_Symbol_SearchesAllDeclarationNodes()
     {
         var compilation = TestHelpers.CreateCompilation(
-            "partial class Example { }",
-            "// @union\npartial class Example { }");
+            [
+                "partial class Example { }",
+                "// @union\npartial class Example { }"
+            ]);
         var symbol = compilation.GetTypeByMetadataName("Example");
 
         Assert.IsNotNull(symbol);

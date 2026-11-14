@@ -316,7 +316,7 @@ namespace UnionTypes.Toolkit.Generators
                         }
 
                         // access property members individually
-                        if (propertyMembers.Count > 1)
+                        if (propertyMembers.Count > 0)
                         {
                             for (int i = 0; i < propertyMembers.Count; i++)
                             {
@@ -582,14 +582,35 @@ namespace UnionTypes.Toolkit.Generators
                 if (layout.Union.DefaultPropertyName != null)
                 {
                     WriteFieldReference(layout.TagField);
-                    _writer.Write($" == {UnitializedTagValue} ? {layout.Union.DefaultPropertyName}.HasValue : ");
-                    WriteFieldReference(layout.TagField);
-                    _writer.WriteLine($" != {layout.NullCaseTagValue};");
+                    _writer.WriteLine($" == {UnitializedTagValue}");
+                    _writer.WriteNested(() =>
+                    {
+                        _writer.WriteLine($"? {layout.Union.DefaultPropertyName}.HasValue"); 
+                        _writer.Write(": ");
+                        WriteTagCheck();
+                        _writer.WriteLine(";");
+                    });
                 }
                 else
                 {
-                    WriteFieldReference(layout.TagField);
-                    _writer.WriteLine($" != {layout.NullCaseTagValue};");                    
+                    WriteTagCheck();
+                    _writer.WriteLine(";");
+                }   
+
+                void WriteTagCheck()
+                {
+                    if (layout.NullCaseTagValue != UnitializedTagValue)
+                    {
+                        WriteFieldReference(layout.TagField);
+                        _writer.Write($" != {UnitializedTagValue} && ");
+                        WriteFieldReference(layout.TagField);
+                        _writer.Write($" != {layout.NullCaseTagValue}");
+                    }
+                    else
+                    {
+                        WriteFieldReference(layout.TagField);
+                        _writer.Write($" != {UnitializedTagValue}");
+                    }                
                 }
             }
         }
@@ -753,7 +774,7 @@ namespace UnionTypes.Toolkit.Generators
 
             // note: include Unconstrained type parameters because they may have a nullable type at runtime that needs to have a separate null case.
             var needsNullCaseTag = union.Cases.Any(c => c.Type.MightBeNullable);
-            var nullCaseTagValue = union.Cases.Count + 1; // put null case tag after all regular cases
+            var nullCaseTagValue = needsNullCaseTag ? union.Cases.Count + 1 : 0; // put null case tag after all regular cases
 
             for (int i = 0; i < union.Cases.Count; i++)
             {
