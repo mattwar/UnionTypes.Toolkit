@@ -293,7 +293,8 @@ namespace UnionTypes.Toolkit.Generators
             {
                 var pc = partialConstructors[i];
                 var declaringNode = pc.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax()!;
-                var caseDesc = GetCaseDesc(caseTypes, i, diagnostics, declaringNode, pc.Parameters[0].Name, hasPartialConstructorDefinition: true);
+                var accessibility = pc.DeclaredAccessibility == Accessibility.NotApplicable ? null : GetAccessibility(pc.DeclaredAccessibility);
+                var caseDesc = GetCaseDesc(caseTypes, i, diagnostics, declaringNode, pc.Parameters[0].Name, hasPartialConstructorDefinition: true, constructorAccessiblity: accessibility);
                 cases.Add(caseDesc);
             }           
         }
@@ -344,7 +345,9 @@ namespace UnionTypes.Toolkit.Generators
             List<Diagnostic> diagnostics, 
             SyntaxNode caseDeclaration, 
             string constructorParameterName,
-            bool hasPartialConstructorDefinition)
+            bool hasPartialConstructorDefinition,
+            string? constructorAccessiblity = null
+            )
         {
             var type = caseTypes[caseIndex];
             var nnType = type.GetNonNullableType();
@@ -374,7 +377,7 @@ namespace UnionTypes.Toolkit.Generators
                 typeDesc, 
                 nonDisjointCases,
                 memberAccessibility: accessibility,
-                constructorAccessibility: accessibility,  // use general accessiblity for now, this seems to not generate errors
+                constructorAccessibility: constructorAccessiblity ?? accessibility,  // use general accessiblity for now, this seems to not generate errors
                 constructorParameterName: constructorParameterName,
                 hasPartialConstructorDefinition: hasPartialConstructorDefinition
                 );
