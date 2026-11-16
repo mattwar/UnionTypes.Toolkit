@@ -8,7 +8,7 @@ DisplayUnion("Hello");
 // because type of case is only known at runtime and runtime cannot know about nullability of type parameters
 var y = new Union<string, int>((string)null!);
 
-// this will throw on purpose because MyUnion does not allow null for valid state
+// this will throw since no case allows for null at compile time, null protection is on
 //var x = new MyUnion((string)null!);
 
 

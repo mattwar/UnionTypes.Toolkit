@@ -94,65 +94,99 @@ In this example, there will be a single field storing a struct that contains eno
 
 ## Null Protection
 
-If no case type allows for null (only known value types and non-nullable references as cases) the union will be generated to throw a NullArgumentException if constructed with a null value.
+If no case type allows for null (only known value types and non-nullable references as cases) the union will be generated to throw a `NullArgumentException` if somehow constructed with a null value.
 
-If any case type is a type parameters that is not constrained to struct this protection will not be enabled since null may be a valid value given the constructed form of the generic union.
+If any case type is a type parameter that is not constrained to struct this protection will not be enabled since null may be a valid value given the constructed form of the generic union.
 
 ## Default Values
 
-Because the union is a struct it is possible that the union may not be properly initialized with a case type value.
-The union may be either be uninitialized or explicity assigned to this state the `default` keyword. A union not explicitly assigned a case type value is considered to be uninitialized.
+Because the union type is implemented as a struct it is possible to encounter unions that are not property initialized. 
+This can happen when the union is a member of a class, an element of an array or if assigned the value `default`.
+Any union not explicitly assigned a value is considered to be uninitialized.
 
-When this happens the union will behave like it has the value  `null`. This can be surprising for unions that do not include a nullable case type, since the compiler will not require you to cover the null case in a switch expression.  
+When this happens the union will behave like it has the value  `null`. 
+This can be surprising for unions that do not normally allow for null values, since the compiler will not require you to handle the null case in a switch expression.  
 
 To avoid this you can choose to have the union return a different value when it is in its uninitialized state.
 
-To do this, simply declare a static property named `Default` that returns a populated union instance.
-The union will use that value as its uninitialized value.
-This property does not need to be public.
+To do this, declare a default value in one of the case constructors.
+This value will be used when the union in uninitialized.
 
 ```csharp
+// @union
+public partial struct MyUnion
+{
+    public partial MyUnion(string value);
+    public partial MyUnion(int value = 0);
+}
+```
 
+```csharp
+// @union
+public partial struct MyUnion
+{
+    public partial MyUnion(string value = "default");
+    public partial MyUnion(int value);
+}
+```
+
+Alternatively, declare a static field or property named `DefaultValue`. This member does not need to be public. It will be referenced and returned as the value when the union is uninitialized.
+
+```csharp
+// @union
 public partial struct MyUnion
 {
     public partial MyUnion(string value);
     public partial MyUnion(int value);
-
-    public static MyUnion Default { get; } = 0;  // or any other value
+    private static readonly string DefaultValue = "default";
 }
 ```
 
-Ideally, this works best when you have a case type that itself has a reasonable and expected default, but it can you any value you choose.
-
 ```csharp
+// @union
 public partial struct Pet
 {
     public partial MyUnion(Cat value);
     public partial MyUnion(Dog value);
-
-    public static MyUnion Default { get; } = new Cat("Felix");
+    private static Cat DefaultValue { get; } = new Cat("Felix");
 }
 ```
 
-The uninitialized state is a separate from the state a union is in when a case is expected to contain null. In this case a union assigned a null value will still be null.
+Unions that allow null as a value cannot have a separately specified default value.
+The default for a union that allows null will be null.
 
 ```csharp
-public partial struct Pet
+// @union
+public partial struct MyUnion
 {
-    public partial MyUnion(Cat value);
-    public partial MyUnion(Dog? value);
-
-    public static MyUnion Default { get; } = new Cat("Felix");
+    public partial MyUnion(string? value = "default"); // error: cannot specify default and have nullable case
+    public partial MyUnion(int value);
 }
-
-Pet defaultPet = default;
-defaultPet is null; // false, it's a Cat
-
-Pet nullPet = (Dog?)null;
-nullPet is null; // true
 ```
 
-## Customizing Storage Layouts
+```csharp
+// @union
+public partial struct MyUnion
+{
+    public partial MyUnion(string? value);
+    public partial MyUnion(int value);
+    private static readonly string DefaultValue = "default"; // error: cannot specify default and have nullable case
+}
+```
+
+## Storage Layouts
+
+A union is typically generated using a tagged layout.
+It has one field that is the tag that determines which case the union currently contains and a variety of one or more other fields to store the possible values for each kind of case.
+The source generator will pick the optimal storage layout for each case type based on an algorithm used to minimize the memory footprint of the struct.
+It will attempt to overlap in memory types or parts of types from different cases that the runtime will allow to be overlapped and otherwise share fields if possible.
+
+You can influence the source generator to pick an alternative layout for each case if so choose.
+You may, for example, want cases with small struct values to overlap but large ones to box to avoid the memory footprint getting too large.
+
+If all case types are reference types (or boxed structs via customization options below), the union will be generated using a layout that contains only a single field of type object with no tag field.
+
+### Customizing The Layouts
 
 You can override the layout algorithm per case by using annotations in the comments preceding each case type's constructor.
 
@@ -218,7 +252,7 @@ public record struct BadStruct(int X, string Y);
 
 Like with overlapping, the source generator assumes the metadata found in the external libraries to be accurate.
 
-The generator will choose to decompose a struct if it is not overlappable and determines it can trust the shape of the type. Structs are trusted if its constructors have matching deconstructors and additional fields and properties are public and assignable in order to recompose the value when retrieved from the union. If it finds other non-public fields unrelated to assignable auto-properties it will not choose to decompose the type and instead store it as an isolated field.
+The generator will choose to decompose a struct if it is not overlappable and if it determines that it can trust the shape of the type. Structs are trusted if the constructors have matching deconstructors and additional fields and properties are public and assignable in order to recompose the value when retrieved from the union. If it finds other non-public fields unrelated to assignable auto-properties it will not choose to decompose the type and instead store it as an isolated field.
 
 If the generator does not choose to decompose your struct case, but you are confident it can be trusted you can specify the `@decompose` annotation to request it do so.
 
@@ -252,7 +286,7 @@ Some structs can still not be decomposed even if you request it. This may happen
 
 ### @isolate
 
-You can choose to have any case isolated into its own field. This happens automatically, if the case cannot be overlapped or decomposed.  If neither overlapping or decomposition is suitable, you can specify the `@isolate` annotation to force it to be isolated as whole.  
+You can choose to have any case isolated into its own field. This happens automatically if the case cannot be overlapped or decomposed. If the generator would have chosen to overlap or decompose and you determine that neither is suitable or safe, you can specify the `@isolate` annotation to force it to be isolated in a separate field.
 
 ```csharp
 // @union

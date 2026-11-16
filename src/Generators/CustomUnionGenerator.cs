@@ -179,22 +179,10 @@ namespace UnionTypes.Toolkit.Generators
                         _writer.WriteLine($"if ({parameterName} is {{}} v)");
                         _writer.WriteBraceNested(() =>
                         {
-                            WriteBody("v");                           
+                            WriteBody("v");
                         });
 
-                        if (caseType.MightBeNullable)
-                        {
-                            // assign 'null' tag value if not same as unitialized (0)
-                            if (layout.NullCaseTagValue != 0 && layout.TagField != null)
-                            {
-                                _writer.WriteLine("else");
-                                _writer.WriteBraceNested(() =>
-                                {
-                                    _writer.WriteLine($"{layout.TagField.Name} = {layout.NullCaseTagValue}; // null case");
-                                });
-                            }                            
-                        }
-                        else
+                        if (!caseType.MightBeNullable)
                         {
                             // this case does not allow null (via static type checking at compile time)
                             // throw exception to help avoid getting secret nulls later via bad behaved code at runtime.
@@ -545,10 +533,11 @@ namespace UnionTypes.Toolkit.Generators
                             _writer.WriteLine($"{caseLayout.TagValue} => {caseValue},");
                         }
 
+                        var defaultValue = layout.Union.Cases.FirstOrDefault(c => c.DefaultValue != null)?.DefaultValue;
                         // if there is a default property, return its state instead when the union is unitialized
-                        if (layout.Union.DefaultPropertyName != null)
+                        if (defaultValue != null)
                         {
-                            _writer.WriteLine($"{UnitializedTagValue} => {layout.Union.DefaultPropertyName}.Value,");
+                            _writer.WriteLine($"{UnitializedTagValue} => {defaultValue},");
                         }
 
                         // for any other tag value not explicitly handled, return null
@@ -558,9 +547,18 @@ namespace UnionTypes.Toolkit.Generators
                 }
                 else if (layout.DataFields.Count == 1)
                 {
-                    // the value is only ever stored in exactly one field (boxed layout) so just return that field value.
-                    WriteFieldReference(layout.DataFields[0]);
-                    _writer.WriteLine(";");
+                    var defaultValue = layout.Union.Cases.FirstOrDefault(c => c.DefaultValue != null)?.DefaultValue;
+                    if (defaultValue != null)
+                    {
+                        WriteFieldReference(layout.DataFields[0]);
+                        _writer.WriteLine($" ?? {defaultValue};");
+                    }
+                    else
+                    {
+                        // the value is only ever stored in exactly one field (boxed layout) so just return that field value.
+                        WriteFieldReference(layout.DataFields[0]);
+                        _writer.WriteLine(";");                        
+                    }
                 }
                 else
                 {
@@ -579,39 +577,16 @@ namespace UnionTypes.Toolkit.Generators
             {
                 _writer.Write($"public bool HasValue => ");
 
-                if (layout.Union.DefaultPropertyName != null)
+                var defaultValue = layout.Union.Cases.FirstOrDefault(c => c.DefaultValue != null)?.DefaultValue;
+                if (defaultValue != null)
                 {
-                    WriteFieldReference(layout.TagField);
-                    _writer.WriteLine($" == {UnitializedTagValue}");
-                    _writer.WriteNested(() =>
-                    {
-                        _writer.WriteLine($"? {layout.Union.DefaultPropertyName}.HasValue"); 
-                        _writer.Write(": ");
-                        WriteTagCheck();
-                        _writer.WriteLine(";");
-                    });
+                    _writer.WriteLine("true;");
                 }
                 else
                 {
-                    WriteTagCheck();
-                    _writer.WriteLine(";");
+                    WriteFieldReference(layout.TagField);
+                    _writer.Write($" != {UnitializedTagValue};");
                 }   
-
-                void WriteTagCheck()
-                {
-                    if (layout.NullCaseTagValue != UnitializedTagValue)
-                    {
-                        WriteFieldReference(layout.TagField);
-                        _writer.Write($" != {UnitializedTagValue} && ");
-                        WriteFieldReference(layout.TagField);
-                        _writer.Write($" != {layout.NullCaseTagValue}");
-                    }
-                    else
-                    {
-                        WriteFieldReference(layout.TagField);
-                        _writer.Write($" != {UnitializedTagValue}");
-                    }                
-                }
             }
         }
 
@@ -670,11 +645,12 @@ namespace UnionTypes.Toolkit.Generators
                                 }
                             }
 
-                            // if the tag value is for an uninitialized union that has a Default property, return the default property's value if it exists
-                            if (layout.Union.DefaultPropertyName != null)
+                            // if the tag is the uninitialized state tag and the case has a a default value, return the default value.
+                            if (caseLayout.Case.DefaultValue != null)
                             {
                                 _writer.WriteLine($"case {UnitializedTagValue}:");
-                                _writer.WriteLineNested($"return {layout.Union.DefaultPropertyName}.TryGetValue(out value);");                                
+                                _writer.WriteLineNested($"value = {caseLayout.Case.DefaultValue};");
+                                _writer.WriteLineNested($"return true;");
                             }
 
                             // for any other tag value
@@ -693,13 +669,14 @@ namespace UnionTypes.Toolkit.Generators
                             _writer.WriteLine("return true;");
                         });
 
-                        // if the tag value is for an uninitialized union that has a Default property, return the default property's value if possible
-                        if (layout.Union.DefaultPropertyName != null)
+                        // if the tag is the uninitialized state tag and the case has a a default value, return the default value.
+                        if (caseLayout.Case.DefaultValue != null)
                         {
                             _writer.WriteLine($"else if ({layout.TagField.Name} == {UnitializedTagValue})");
                             _writer.WriteBraceNested(() =>
                             {
-                                _writer.WriteLine($"return {layout.Union.DefaultPropertyName}.TryGetValue(out value);");                                                                
+                                _writer.WriteLine($"value = {caseLayout.Case.DefaultValue};");
+                                _writer.WriteLine($"return true;");                               
                             });
                         }
 
@@ -772,10 +749,6 @@ namespace UnionTypes.Toolkit.Generators
             var caseLayouts = new List<CaseLayout>();
             var usedFields = new HashSet<DataField>();
 
-            // note: include Unconstrained type parameters because they may have a nullable type at runtime that needs to have a separate null case.
-            var needsNullCaseTag = union.Cases.Any(c => c.Type.MightBeNullable);
-            var nullCaseTagValue = needsNullCaseTag ? union.Cases.Count + 1 : 0; // put null case tag after all regular cases
-
             for (int i = 0; i < union.Cases.Count; i++)
             {
                 var caseDesc = union.Cases[i];
@@ -819,8 +792,7 @@ namespace UnionTypes.Toolkit.Generators
                 caseLayouts,
                 dataFields,
                 tagField,
-                overlappedField,
-                nullCaseTagValue: nullCaseTagValue
+                overlappedField
                 );
 
             CaseLayout GetBoxedLayout(CaseDesc caseDesc, TypeDesc caseType, int tagValue)
@@ -1019,27 +991,18 @@ namespace UnionTypes.Toolkit.Generators
             /// </summary>
             public DataField? OverlappedField { get; }
 
-            /// <summary>
-            /// The tag value that corresponds to a null value.
-            /// Typically 0, same as unitialized union, unless there is an explicit default value for the union 
-            /// and also possible null value.
-            /// </summary>
-            public int NullCaseTagValue { get; }
-
             public UnionLayout(
                 UnionInfo union, 
                 IReadOnlyList<CaseLayout> caseLayouts,
                 IReadOnlyList<DataField> caseFields,
                 DataField? tagField = null,
-                DataField? overlappedField = null,
-                int nullCaseTagValue = 0)
+                DataField? overlappedField = null)
             {
                 this.Union = union;
                 this.CaseLayouts = caseLayouts;
                 this.DataFields = caseFields;
                 this.TagField = tagField;
                 this.OverlappedField = overlappedField;
-                this.NullCaseTagValue = nullCaseTagValue;
             }
         }
 
@@ -1224,11 +1187,6 @@ namespace UnionTypes.Toolkit.Generators
         public LayoutStyle Style { get; }
 
         /// <summary>
-        /// The name of the static property that returns the default value of the union when it is unitialized.
-        /// </summary>
-        public string? DefaultPropertyName { get; }
-
-        /// <summary>
         /// The cases
         /// </summary>
         public IReadOnlyList<CaseDesc> Cases { get; }
@@ -1237,8 +1195,7 @@ namespace UnionTypes.Toolkit.Generators
             string name,
             IReadOnlyList<CaseDesc> cases,
             LayoutStyle style = LayoutStyle.Tagged,
-            string accessibility = "public",
-            string? defaultPropertyName = null
+            string accessibility = "public"
             )
         {
             this.DeclarationName = GetDeclarationName(name);
@@ -1247,7 +1204,6 @@ namespace UnionTypes.Toolkit.Generators
             this.Style = style;
             this.Cases = cases;
             this.Accessibility = accessibility;
-            this.DefaultPropertyName = defaultPropertyName;
         }
 
         /// <summary>
@@ -1374,6 +1330,12 @@ namespace UnionTypes.Toolkit.Generators
         /// </summary>
         public bool HasPartialConstructorDefinition { get; }
 
+        /// <summary>
+        /// The default value for the union.
+        /// This is an expression that yields a value of the case type.
+        /// </summary>
+        public string? DefaultValue { get; }
+
         public CaseDesc(
             TypeDesc type,
             IReadOnlyList<int>? nonDisjointCases = null,
@@ -1381,7 +1343,8 @@ namespace UnionTypes.Toolkit.Generators
             bool generateType = false,
             string constructorAccessibility = "public",
             string constructorParameterName = "value",
-            bool hasPartialConstructorDefinition = false)
+            bool hasPartialConstructorDefinition = false,
+            string? defaultValue = null)
         {
             this.Type = type;
             this.NonDisjointCases = nonDisjointCases ?? Array.Empty<int>();
@@ -1390,6 +1353,7 @@ namespace UnionTypes.Toolkit.Generators
             this.ConstructorAccessibility = constructorAccessibility;
             this.ConstructorParameterName = constructorParameterName;
             this.HasPartialConstructorDefinition = hasPartialConstructorDefinition;
+            this.DefaultValue = defaultValue;
         }
 
         public bool Equals(CaseDesc other)
@@ -1405,7 +1369,10 @@ namespace UnionTypes.Toolkit.Generators
                     if (this.NonDisjointCases[i] != other.NonDisjointCases[i])
                         return false;
                 }
-                return true;
+                return this.ConstructorAccessibility == other.ConstructorAccessibility
+                    && this.ConstructorParameterName == other.ConstructorParameterName
+                    && this.HasPartialConstructorDefinition == other.HasPartialConstructorDefinition
+                    && this.DefaultValue == other.DefaultValue;
             }
             return false;
         }

@@ -265,25 +265,17 @@ namespace Tests
                 );
         }
 
-
         [TestMethod]
-        public void TestDefaultProperty()
+        public void TestDefaultValue()
         {
-            // prove that structs will be overlapped, if at least two cases request overlap
+            // prove union with default value generates and builds w/o error
             TestGenerate(
-                """
-                public partial struct TestUnion
-                {
-                    public static TestUnion Default { get; } = new TestUnion("Default");
-                }
-                """,
                 new UnionInfo(
                     "TestUnion",
                     [
-                        new CaseDesc(TypeDesc.String),
+                        new CaseDesc(TypeDesc.String, defaultValue: "\"Default\""),
                         new CaseDesc(TypeDesc.Int32),
-                    ],
-                    defaultPropertyName: "Default"
+                    ]
                     ),
                 generatedText =>
                 {
@@ -292,7 +284,6 @@ namespace Tests
                 }
                 );
         }
-
 
         private void TestGenerate(UnionInfo union, Action<string>? generatedTextValidator = null)
         {
