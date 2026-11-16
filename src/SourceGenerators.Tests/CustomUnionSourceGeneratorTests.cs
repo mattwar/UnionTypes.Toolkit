@@ -1577,7 +1577,38 @@ public class CustomUnionSourceGeneratorTests
     }
 
     [TestMethod]
-    public void TestDefaultProperty()
+    public void TestDefaultValue_Constructor()
+    {
+        TestGenerator<CustomUnionSourceGenerator>(
+            """
+            // @union
+            public partial struct MyUnion
+            {
+                public partial MyUnion(string value = "default");
+                public partial MyUnion(int value);
+            }
+            """,
+            generatedText =>
+            {
+                Assert.IsTrue(HasTagField(generatedText));
+                Assert.IsFalse(HasOverlappedField(generatedText));
+                Assert.IsTrue(HasValueFields(generatedText, "object?", "int"));
+            },
+            """
+            using System;
+            using System.Diagnostics;
+
+            MyUnion u1 = default;
+            Debug.Assert(u1 is "default");
+
+            MyUnion u2 = new MyUnion();
+            Debug.Assert(u2 is "default");
+            """
+            );
+    }
+
+    [TestMethod]
+    public void TestDefaultValue_Field()
     {
         TestGenerator<CustomUnionSourceGenerator>(
             """
@@ -1587,7 +1618,7 @@ public class CustomUnionSourceGeneratorTests
                 public partial MyUnion(string value);
                 public partial MyUnion(int value);
 
-                public static MyUnion Default { get; } = "default";
+                private static readonly string DefaultValue = "default";
             }
             """,
             generatedText =>
@@ -1607,47 +1638,17 @@ public class CustomUnionSourceGeneratorTests
     }
 
     [TestMethod]
-    public void TestDefaultProperty_NullDefault()
+    public void TestDefaultValue_Property()
     {
         TestGenerator<CustomUnionSourceGenerator>(
             """
             // @union
             public partial struct MyUnion
             {
-                public partial MyUnion(string? value);
+                public partial MyUnion(string value);
                 public partial MyUnion(int value);
 
-                public static MyUnion Default { get; } = (string?)null;
-            }
-            """,
-            generatedText =>
-            {
-                Assert.IsTrue(HasTagField(generatedText));
-                Assert.IsFalse(HasOverlappedField(generatedText));
-                Assert.IsTrue(HasValueFields(generatedText, "object?", "int"));
-            },
-            """
-            using System;
-            using System.Diagnostics;
-
-            MyUnion u1 = default;
-            Debug.Assert(u1 is null);
-            """
-            );
-    }
-
-    [TestMethod]
-    public void TestDefaultProperty_NullCase()
-    {
-        TestGenerator<CustomUnionSourceGenerator>(
-            """
-            // @union
-            public partial struct MyUnion
-            {
-                public partial MyUnion(string? value);
-                public partial MyUnion(int value);
-
-                public static MyUnion Default { get; } = "default";
+                private static string DefaultValue { get; }= "default";
             }
             """,
             generatedText =>
@@ -1662,12 +1663,133 @@ public class CustomUnionSourceGeneratorTests
 
             MyUnion u1 = default;
             Debug.Assert(u1 is "default");
-
-            MyUnion u2 = (string?)null;
-            Debug.Assert(u2 is null);
             """
             );
     }
+
+    [TestMethod]
+    public void TestDefaultValue_BoxedLayout()
+    {
+        // prove that a union that uses boxed layout (not tagged layout)
+        // correctly returns default values for uninitialized instances
+        TestGenerator<CustomUnionSourceGenerator>(
+            """
+            // @union
+            public partial struct MyUnion
+            {
+                public partial MyUnion(string value = "default");
+
+                // @box
+                public partial MyUnion(int value);
+            }
+            """,
+            generatedText =>
+            {
+                Assert.IsFalse(HasTagField(generatedText));
+                Assert.IsTrue(HasValueFields(generatedText, "object?"));
+            },
+            """
+            using System;
+            using System.Diagnostics;
+
+            MyUnion u1 = default;
+            Debug.Assert(u1 is "default");
+            """
+            );
+    }
+
+    [TestMethod]
+    public void TestDefaultValue_WithNullCase()
+    {
+        // default values with nullable types returns null
+        TestGenerator<CustomUnionSourceGenerator>(
+            """
+            // @union
+            public partial struct MyUnion
+            {
+                public partial MyUnion(string? value = <<"default">>);
+                public partial MyUnion(int value);
+            }
+            """,
+            ["UT0005"]
+            );
+    }
+
+    [TestMethod]
+    public void TestDefaultValue_WithNullCase_Field()
+    {
+        // default values with nullable types returns null
+        TestGenerator<CustomUnionSourceGenerator>(
+            """
+            // @union
+            public partial struct MyUnion
+            {
+                public partial MyUnion(string? value);
+                public partial MyUnion(int value);
+
+                private static readonly string <<DefaultValue = "default">>;
+            }
+            """,
+            ["UT0005"]
+            );
+    }
+
+    [TestMethod]
+    public void TestDefaultValue_WithNullCase_Property()
+    {
+        // default values with nullable types returns null
+        TestGenerator<CustomUnionSourceGenerator>(
+            """
+            // @union
+            public partial struct MyUnion
+            {
+                public partial MyUnion(string? value);
+                public partial MyUnion(int value);
+
+                <<private static string DefaultValue { get;} = "default";>>
+            }
+            """,
+            ["UT0005"]
+            );
+    }
+
+    [TestMethod]
+    public void TestDefaultValue_MultipleDefaults_Constructors()
+    {
+        // default values with nullable types returns null
+        TestGenerator<CustomUnionSourceGenerator>(
+            """
+            // @union
+            public partial struct MyUnion
+            {
+                public partial MyUnion(string value = "default");
+                public partial MyUnion(int value = <<0>>);
+            }
+            """,
+            ["UT0006"]
+            );
+    }
+
+    [TestMethod]
+    public void TestDefaultValue_MultipleDefaults_ConstructorAndMember()
+    {
+        // default values with nullable types returns null
+        TestGenerator<CustomUnionSourceGenerator>(
+            """
+            // @union
+            public partial struct MyUnion
+            {
+                public partial MyUnion(string value = <<"default">>);
+                public partial MyUnion(int value);
+
+                private static string DefaultValue { get; } = 0;
+            }
+            """,
+            ["UT0006"]
+            );
+    }
+
+
 
     #region Generated Text Checks
 

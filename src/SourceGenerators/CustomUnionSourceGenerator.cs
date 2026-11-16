@@ -18,6 +18,7 @@ namespace UnionTypes.Toolkit.Generators
         public static readonly string CaseAttributeName = "CaseAttribute";
         public static readonly string TagUnionAnnotation = "@TagUnion";
         public static readonly string TypeUnionAnnotation = "@TypeUnion";
+        public static readonly string DefaultValueMemberName = "DefaultValue";
 
         public static readonly string GetInfoStepName = "GetInfo";
         public static readonly string GenerateStepName = "Generate";
@@ -66,20 +67,53 @@ namespace UnionTypes.Toolkit.Generators
                 && method.Parameters.Length > 0);
         }
 
-        /// <summary>
-        /// Returns the name of the static property that provides the default value of the union type, if it exists.
-        /// </summary>
-        private static string? GetDefaultValuePropertyName(INamedTypeSymbol symbol)
+        private static (string? DefaultValue, Location? Location) GetDefaultValueFromParameter(
+            IParameterSymbol parameterSymbol)
         {
-            if (symbol.GetMembers().OfType<IPropertySymbol>().Any(prop =>
-                prop.IsStatic
-                && prop.Name == "Default"
-                && SymbolEqualityComparer.Default.Equals(prop.Type, symbol)))
+            if (parameterSymbol.HasExplicitDefaultValue)
             {
-                return "Default";
+                var parameterSyntax = parameterSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as ParameterSyntax;
+                if (parameterSyntax != null && parameterSyntax.Default != null)
+                {
+                    // get default expression w/o leading/trailing trivia
+                    var span = parameterSyntax.Default.Value.Span;
+                    var text = parameterSyntax.SyntaxTree.GetText().GetSubText(span).ToString().Trim();                   
+                    var node = parameterSyntax.Default.Value;
+                    return (text, node.GetLocation());
+                }
             }
 
-            return null;
+            return (null, null);
+        }
+
+        private static (string? DefaultValue, Location? Location) GetDefaultValueFromMember(
+            INamedTypeSymbol unionType, 
+            ITypeSymbol caseType)
+        {
+            var member = GetDefaultValueMember(unionType);            
+            if (member != null)
+            {
+                var nonNullableCaseType = caseType.GetNonNullableType();
+                if (member is IFieldSymbol field
+                    && SymbolEqualityComparer.Default.Equals(field.Type, nonNullableCaseType))
+                {
+                    var location = member.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax()?.GetLocation();
+                    return (member.Name, location);                    
+                }
+                else if (member is IPropertySymbol property
+                    && SymbolEqualityComparer.Default.Equals(property.Type, nonNullableCaseType))
+                {
+                    var location = member.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax()?.GetLocation();
+                    return (member.Name, location);
+                }
+            }
+
+            return (null, null);
+        }
+
+        private static ISymbol? GetDefaultValueMember(INamedTypeSymbol unionType)
+        {
+            return unionType.GetMembers().FirstOrDefault(s => s.IsStatic && s.Name == DefaultValueMemberName);
         }
 
         /// <summary>
@@ -226,8 +260,6 @@ namespace UnionTypes.Toolkit.Generators
                 GetTypeCasesFromPartialConstructors(unionType, cases, diagnostics);
             }
 
-            var defaultValuePropertyName = GetDefaultValuePropertyName(unionType);
-
             if (cases.Count > 0)
             {
                 var fullName = GetTypeFullName(unionType);
@@ -241,8 +273,7 @@ namespace UnionTypes.Toolkit.Generators
                     fullName,
                     cases,
                     layoutStyle,
-                    accessibility,
-                    defaultValuePropertyName
+                    accessibility
                     );
 
                 info = new GenerationInfo(namespaceName, usings, union, diagnostics);
@@ -289,14 +320,59 @@ namespace UnionTypes.Toolkit.Generators
                 caseTypes.Add(pc.Parameters[0].Type);
             }
 
+            var dv = (DefaultValue: (string?)null, Location: (Location?)null);
+            var unionLocationNode = ((StructDeclarationSyntax)unionType.GetDeclarationNodes().FirstOrDefault()).Identifier;
+
+            var defaultValueMember = GetDefaultValueMember(unionType);
+
             for (int i = 0; i < caseTypes.Count; i++)
             {
                 var pc = partialConstructors[i];
                 var declaringNode = pc.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax()!;
-                var accessibility = pc.DeclaredAccessibility == Accessibility.NotApplicable ? null : GetAccessibility(pc.DeclaredAccessibility);
-                var caseDesc = GetCaseDesc(caseTypes, i, diagnostics, declaringNode, pc.Parameters[0].Name, hasPartialConstructorDefinition: true, constructorAccessiblity: accessibility);
+                
+                var accessibility = pc.DeclaredAccessibility == Accessibility.NotApplicable 
+                    ? null 
+                    : GetAccessibility(pc.DeclaredAccessibility);
+
+                var caseDV = GetDefaultValueFromParameter(partialConstructors[i].Parameters[0]);
+                if (caseDV.DefaultValue != null)
+                {
+                    if (defaultValueMember != null
+                        || dv.DefaultValue != null)
+                    {
+                        // cannot havemultiple default values specified
+                        diagnostics.Add(Diagnostic.Create(MultipleDefaultsDiagnostic, caseDV.Location));
+                    }
+                }
+
+                if (caseDV.DefaultValue == null)
+                {
+                    caseDV = GetDefaultValueFromMember(unionType, caseTypes[i]);                    
+                }
+
+                var caseDesc = GetCaseDesc(
+                    caseTypes, 
+                    i, 
+                    diagnostics, 
+                    declaringNode, 
+                    pc.Parameters[0].Name, 
+                    hasPartialConstructorDefinition: true, 
+                    constructorAccessiblity: accessibility,
+                    defaultValue: caseDV.DefaultValue
+                    );
+
                 cases.Add(caseDesc);
-            }           
+
+                if (caseDV.DefaultValue != null && caseDesc.Type.MightBeNullable)
+                {
+                    diagnostics.Add(Diagnostic.Create(DefaultForNullableUnionDiagnostic, caseDV.Location));
+                }
+
+                if (caseDV.DefaultValue != null && dv.DefaultValue == null)
+                {
+                    dv = caseDV;
+                }
+            }
         }
 
         private void GetTypeCasesFromPrivateCaseMethod(
@@ -330,7 +406,16 @@ namespace UnionTypes.Toolkit.Generators
                 {
                     var caseType = caseTypes[i];
                     var declaringNode = caseParams[i].DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax()!;
-                    var caseDesc = GetCaseDesc(caseTypes, i, diagnostics, declaringNode, "value", hasPartialConstructorDefinition: false);
+
+                    var caseDesc = GetCaseDesc(
+                        caseTypes, 
+                        i, 
+                        diagnostics, 
+                        declaringNode, 
+                        "value", 
+                        hasPartialConstructorDefinition: false
+                        );
+
                     cases.Add(caseDesc);
                 }
             }
@@ -346,7 +431,8 @@ namespace UnionTypes.Toolkit.Generators
             SyntaxNode caseDeclaration, 
             string constructorParameterName,
             bool hasPartialConstructorDefinition,
-            string? constructorAccessiblity = null
+            string? constructorAccessiblity = null,
+            string? defaultValue = null
             )
         {
             var type = caseTypes[caseIndex];
@@ -379,7 +465,8 @@ namespace UnionTypes.Toolkit.Generators
                 memberAccessibility: accessibility,
                 constructorAccessibility: constructorAccessiblity ?? accessibility,  // use general accessiblity for now, this seems to not generate errors
                 constructorParameterName: constructorParameterName,
-                hasPartialConstructorDefinition: hasPartialConstructorDefinition
+                hasPartialConstructorDefinition: hasPartialConstructorDefinition,
+                defaultValue: defaultValue
                 );
         }
 
@@ -1282,6 +1369,29 @@ namespace UnionTypes.Toolkit.Generators
             DiagnosticSeverity.Warning,
             true
             );
+
+       private static DiagnosticDescriptor DefaultForNullableUnionDiagnostic = new DiagnosticDescriptor(
+#pragma warning disable RS2008 // Enable analyzer release tracking
+            "UT0005",
+#pragma warning restore RS2008 // Enable analyzer release tracking
+            "Default for union with nullable case",
+            "The default for a union that allows null values is null",
+            "UnionTypes",
+            DiagnosticSeverity.Error,
+            true
+            );
+
+       private static DiagnosticDescriptor MultipleDefaultsDiagnostic = new DiagnosticDescriptor(
+#pragma warning disable RS2008 // Enable analyzer release tracking
+            "UT0006",
+#pragma warning restore RS2008 // Enable analyzer release tracking
+            "Multiple defaults",
+            "A union cannot have multiple default values",
+            "UnionTypes",
+            DiagnosticSeverity.Error,
+            true
+            );
+
 
         [Flags]
         public enum StorageCapable

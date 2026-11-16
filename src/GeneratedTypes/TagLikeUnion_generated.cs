@@ -63,8 +63,7 @@ public partial struct TagLikeUnion : System.Runtime.CompilerServices.IUnion
         };
 
     public bool HasValue => _kind != 0;
-
-    public bool TryGetValue([NotNullWhen(true)] out Open value)
+public bool TryGetValue([NotNullWhen(true)] out Open value)
     {
         if (_kind == 1)
         {
